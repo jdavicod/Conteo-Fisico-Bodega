@@ -10,9 +10,15 @@ import {
   VolumeX,
   ChevronDown,
   ChevronUp,
-  AlertCircle
+  AlertCircle,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import { LocationItem, LocationStatus } from '../types';
+
+export type SortField = 'code' | 'nivel' | 'columna' | 'estanteria' | 'posicion' | 'status';
+export type SortDirection = 'asc' | 'desc';
 
 interface Props {
   locations: LocationItem[];
@@ -29,6 +35,10 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
   const [filterPosicion, setFilterPosicion] = useState<string>('todos');
   const [filterStatus, setFilterStatus] = useState<'todos' | LocationStatus>('todos');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Sorting state (Menor a mayor / Mayor a menor)
+  const [sortField, setSortField] = useState<SortField>('code');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
   // Dropdown state for filters
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
@@ -87,9 +97,9 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
     return Array.from(set).sort((a, b) => Number(a) - Number(b));
   }, [locations]);
 
-  // HU-03: Combined filtering
+  // HU-03: Combined filtering and Sorting (de menor a mayor y de mayor a menor para números y letras)
   const filteredLocations = useMemo(() => {
-    return locations.filter(l => {
+    const result = locations.filter(l => {
       if (filterNivel !== 'todos' && l.nivel !== filterNivel) return false;
       if (filterColumna !== 'todos' && l.columna !== filterColumna) return false;
       if (filterEstanteria !== 'todos' && l.estanteria !== filterEstanteria) return false;
@@ -101,7 +111,56 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
       }
       return true;
     });
-  }, [locations, filterNivel, filterColumna, filterEstanteria, filterPosicion, filterStatus, searchQuery]);
+
+    result.sort((a, b) => {
+      let comparison = 0;
+      switch (sortField) {
+        case 'code':
+          // Orden natural para letras y números combinados (ej. N1C01EAP1)
+          comparison = a.code.localeCompare(b.code, undefined, { numeric: true, sensitivity: 'base' });
+          break;
+        case 'nivel':
+          // Números de menor a mayor
+          comparison = (Number(a.nivel) || 0) - (Number(b.nivel) || 0) || a.nivel.localeCompare(b.nivel);
+          break;
+        case 'columna':
+          // Números de menor a mayor
+          comparison = (Number(a.columna) || 0) - (Number(b.columna) || 0) || a.columna.localeCompare(b.columna);
+          break;
+        case 'estanteria':
+          // Letras de A a Z
+          comparison = a.estanteria.localeCompare(b.estanteria);
+          break;
+        case 'posicion':
+          // Números de menor a mayor
+          comparison = (Number(a.posicion) || 0) - (Number(b.posicion) || 0) || a.posicion.localeCompare(b.posicion);
+          break;
+        case 'status':
+          const statusOrder: Record<LocationStatus, number> = {
+            pendiente: 1,
+            vacia: 2,
+            llena: 3,
+          };
+          comparison = (statusOrder[a.status] || 0) - (statusOrder[b.status] || 0);
+          break;
+        default:
+          comparison = 0;
+      }
+
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+
+    return result;
+  }, [locations, filterNivel, filterColumna, filterEstanteria, filterPosicion, filterStatus, searchQuery, sortField, sortDirection]);
+
+  const handleSortToggle = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
 
   const handleMark = (id: string, newStatus: LocationStatus) => {
     onUpdateStatus(id, newStatus);
@@ -115,6 +174,8 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
     setFilterPosicion('todos');
     setFilterStatus('todos');
     setSearchQuery('');
+    setSortField('code');
+    setSortDirection('asc');
   };
 
   const activeFiltersCount = useMemo(() => {
@@ -127,7 +188,7 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
     return count;
   }, [filterNivel, filterColumna, filterEstanteria, filterPosicion, filterStatus]);
 
-  const hasActiveFilters = activeFiltersCount > 0 || searchQuery.trim() !== '';
+  const hasActiveFilters = activeFiltersCount > 0 || searchQuery.trim() !== '' || sortField !== 'code' || sortDirection !== 'asc';
 
   // Stats
   const total = locations.length;
@@ -327,22 +388,99 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
               </div>
             </div>
 
-            <div className="flex justify-end">
+            {/* SECCIÓN DE ORDENAMIENTO: Menor a Mayor / Mayor a Menor */}
+            <div className="pt-2 border-t border-zinc-200">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-3xs font-bold text-zinc-700 uppercase flex items-center gap-1">
+                  <ArrowUpDown className="w-3 h-3 text-blue-600" />
+                  <span>Ordenar listado (Números y Letras)</span>
+                </span>
+                <span className="text-3xs font-medium text-blue-700">
+                  {sortDirection === 'asc' ? '↑ Menor a mayor' : '↓ Mayor a menor'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {/* Selector de columna */}
+                <div>
+                  <label className="text-3xs font-bold text-zinc-500 uppercase block mb-0.5">Columna a ordenar</label>
+                  <select
+                    value={sortField}
+                    onChange={(e) => setSortField(e.target.value as SortField)}
+                    className="w-full text-xs p-1.5 bg-white border border-zinc-300 rounded-md text-zinc-800"
+                  >
+                    <option value="code">Ubicación (N1C01...)</option>
+                    <option value="nivel">Nivel (1, 2, 3...)</option>
+                    <option value="columna">Columna (01, 02...)</option>
+                    <option value="estanteria">Estantería (A, B, C...)</option>
+                    <option value="posicion">Posición (1, 2, 3...)</option>
+                    <option value="status">Estado (Pendiente, Vacía, Llena)</option>
+                  </select>
+                </div>
+
+                {/* Sentido: Menor a Mayor vs Mayor a Menor */}
+                <div>
+                  <label className="text-3xs font-bold text-zinc-500 uppercase block mb-0.5">Sentido del orden</label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setSortDirection('asc')}
+                      className={`py-1 px-1.5 text-xs font-bold rounded-md border flex items-center justify-center gap-1 cursor-pointer transition-all ${
+                        sortDirection === 'asc'
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                          : 'bg-zinc-50 text-zinc-700 border-zinc-300 hover:bg-zinc-100'
+                      }`}
+                    >
+                      <ArrowUp className="w-3 h-3" />
+                      <span>Menor a Mayor</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSortDirection('desc')}
+                      className={`py-1 px-1.5 text-xs font-bold rounded-md border flex items-center justify-center gap-1 cursor-pointer transition-all ${
+                        sortDirection === 'desc'
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                          : 'bg-zinc-50 text-zinc-700 border-zinc-300 hover:bg-zinc-100'
+                      }`}
+                    >
+                      <ArrowDown className="w-3 h-3" />
+                      <span>Mayor a Menor</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-1">
               <button
                 type="button"
                 onClick={() => setIsFiltersOpen(false)}
-                className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-md shadow-2xs"
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-md shadow-2xs cursor-pointer"
               >
-                Cerrar ({filteredLocations.length})
+                Aplicar y Cerrar ({filteredLocations.length})
               </button>
             </div>
           </div>
         )}
 
-        {/* Chips de filtros activos */}
-        {activeFiltersCount > 0 && !isFiltersOpen && (
+        {/* Chips de filtros y orden activo */}
+        {hasActiveFilters && !isFiltersOpen && (
           <div className="flex items-center gap-1 flex-wrap pt-1 text-3xs">
-            <span className="text-zinc-400 font-bold uppercase">Filtros:</span>
+            <span className="text-zinc-400 font-bold uppercase">Activos:</span>
+
+            {/* Chip de Ordenación actual */}
+            <button
+              onClick={() => setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')}
+              className="inline-flex items-center gap-0.5 bg-zinc-900 text-white px-2 py-0.5 rounded-full font-bold shadow-2xs cursor-pointer active:scale-95"
+              title="Toca para invertir el orden"
+            >
+              <span>
+                {sortField === 'code' ? 'Ubicación' : sortField === 'nivel' ? 'Nivel' : sortField === 'columna' ? 'Columna' : sortField === 'estanteria' ? 'Estantería' : sortField === 'posicion' ? 'Posición' : 'Estado'}:
+              </span>
+              <span>{sortDirection === 'asc' ? 'Menor a Mayor ↑' : 'Mayor a Menor ↓'}</span>
+            </button>
+
             {filterNivel !== 'todos' && (
               <span className="inline-flex items-center gap-0.5 bg-blue-50 text-blue-700 px-1.5 py-0.2 rounded-full border border-blue-200">
                 N{filterNivel} <button onClick={() => setFilterNivel('todos')}>×</button>
@@ -368,8 +506,8 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
                 {filterStatus} <button onClick={() => setFilterStatus('todos')}>×</button>
               </span>
             )}
-            <button onClick={resetFilters} className="text-red-600 font-semibold underline ml-1">
-              Limpiar
+            <button onClick={resetFilters} className="text-red-600 font-semibold underline ml-1 cursor-pointer">
+              Restablecer
             </button>
           </div>
         )}
@@ -378,6 +516,7 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
       {/* 
         TABLA DE UBICACIONES:
         - Mantiene todas las columnas: Ubicación, N, C, E, P, Acción
+        - Encabezados interactivos para ordenar con un solo toque (Menor a Mayor / Mayor a Menor)
         - 100% visible en pantalla de celular SIN necesidad de scroll horizontal
       */}
       {filteredLocations.length === 0 ? (
@@ -399,12 +538,117 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
           <table className="w-full text-left border-collapse table-fixed min-w-[340px]">
             <thead className="bg-zinc-100 text-zinc-600 text-3xs sm:text-2xs uppercase tracking-wider font-bold border-b border-zinc-200">
               <tr>
-                <th className="py-2 px-1.5 sm:px-3 w-[34%] sm:w-[24%]">Ubicación</th>
-                <th className="py-2 px-0.5 text-center w-[5%] sm:w-[6%]">N</th>
-                <th className="py-2 px-0.5 text-center w-[7%] sm:w-[7%]">C</th>
-                <th className="py-2 px-0.5 text-center w-[5%] sm:w-[6%]">E</th>
-                <th className="py-2 px-0.5 text-center w-[5%] sm:w-[6%]">P</th>
-                <th className="py-2 px-1 sm:px-3 text-right w-[44%] sm:w-[51%]">Conteo</th>
+                {/* 1. Ubicación (Interactivo: A-Z / Z-A) */}
+                <th 
+                  onClick={() => handleSortToggle('code')}
+                  className="py-2 px-1.5 sm:px-3 w-[34%] sm:w-[24%] cursor-pointer hover:bg-zinc-200/80 transition-colors select-none"
+                  title="Toca para ordenar de menor a mayor / mayor a menor"
+                >
+                  <div className="flex items-center gap-1">
+                    <span>Ubicación</span>
+                    {sortField === 'code' ? (
+                      sortDirection === 'asc' ? (
+                        <ArrowUp className="w-2.5 h-2.5 text-blue-600 stroke-[3]" />
+                      ) : (
+                        <ArrowDown className="w-2.5 h-2.5 text-blue-600 stroke-[3]" />
+                      )
+                    ) : (
+                      <ArrowUpDown className="w-2.5 h-2.5 text-zinc-400 opacity-60" />
+                    )}
+                  </div>
+                </th>
+
+                {/* 2. N (Nivel: 1-9 / 9-1) */}
+                <th 
+                  onClick={() => handleSortToggle('nivel')}
+                  className="py-2 px-0.5 text-center w-[5%] sm:w-[6%] cursor-pointer hover:bg-zinc-200/80 transition-colors select-none"
+                  title="Ordenar Nivel: menor a mayor / mayor a menor"
+                >
+                  <div className="flex items-center justify-center gap-0.5">
+                    <span>N</span>
+                    {sortField === 'nivel' && (
+                      sortDirection === 'asc' ? (
+                        <ArrowUp className="w-2 h-2 text-blue-600 stroke-[3]" />
+                      ) : (
+                        <ArrowDown className="w-2 h-2 text-blue-600 stroke-[3]" />
+                      )
+                    )}
+                  </div>
+                </th>
+
+                {/* 3. C (Columna: 01-99 / 99-01) */}
+                <th 
+                  onClick={() => handleSortToggle('columna')}
+                  className="py-2 px-0.5 text-center w-[7%] sm:w-[7%] cursor-pointer hover:bg-zinc-200/80 transition-colors select-none"
+                  title="Ordenar Columna: menor a mayor / mayor a menor"
+                >
+                  <div className="flex items-center justify-center gap-0.5">
+                    <span>C</span>
+                    {sortField === 'columna' && (
+                      sortDirection === 'asc' ? (
+                        <ArrowUp className="w-2 h-2 text-blue-600 stroke-[3]" />
+                      ) : (
+                        <ArrowDown className="w-2 h-2 text-blue-600 stroke-[3]" />
+                      )
+                    )}
+                  </div>
+                </th>
+
+                {/* 4. E (Estantería: A-Z / Z-A) */}
+                <th 
+                  onClick={() => handleSortToggle('estanteria')}
+                  className="py-2 px-0.5 text-center w-[5%] sm:w-[6%] cursor-pointer hover:bg-zinc-200/80 transition-colors select-none"
+                  title="Ordenar Estantería: A-Z / Z-A"
+                >
+                  <div className="flex items-center justify-center gap-0.5">
+                    <span>E</span>
+                    {sortField === 'estanteria' && (
+                      sortDirection === 'asc' ? (
+                        <ArrowUp className="w-2 h-2 text-blue-600 stroke-[3]" />
+                      ) : (
+                        <ArrowDown className="w-2 h-2 text-blue-600 stroke-[3]" />
+                      )
+                    )}
+                  </div>
+                </th>
+
+                {/* 5. P (Posición: 1-9 / 9-1) */}
+                <th 
+                  onClick={() => handleSortToggle('posicion')}
+                  className="py-2 px-0.5 text-center w-[5%] sm:w-[6%] cursor-pointer hover:bg-zinc-200/80 transition-colors select-none"
+                  title="Ordenar Posición: menor a mayor / mayor a menor"
+                >
+                  <div className="flex items-center justify-center gap-0.5">
+                    <span>P</span>
+                    {sortField === 'posicion' && (
+                      sortDirection === 'asc' ? (
+                        <ArrowUp className="w-2 h-2 text-blue-600 stroke-[3]" />
+                      ) : (
+                        <ArrowDown className="w-2 h-2 text-blue-600 stroke-[3]" />
+                      )
+                    )}
+                  </div>
+                </th>
+
+                {/* 6. Conteo / Estado */}
+                <th 
+                  onClick={() => handleSortToggle('status')}
+                  className="py-2 px-1 sm:px-3 text-right w-[44%] sm:w-[51%] cursor-pointer hover:bg-zinc-200/80 transition-colors select-none"
+                  title="Ordenar por estado"
+                >
+                  <div className="flex items-center justify-end gap-1">
+                    <span>Conteo</span>
+                    {sortField === 'status' ? (
+                      sortDirection === 'asc' ? (
+                        <ArrowUp className="w-2.5 h-2.5 text-blue-600 stroke-[3]" />
+                      ) : (
+                        <ArrowDown className="w-2.5 h-2.5 text-blue-600 stroke-[3]" />
+                      )
+                    ) : (
+                      <ArrowUpDown className="w-2.5 h-2.5 text-zinc-400 opacity-60" />
+                    )}
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200">
