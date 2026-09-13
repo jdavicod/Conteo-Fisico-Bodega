@@ -1,0 +1,6 @@
+{
+  "name": "Conteo Físico de Bodega",
+  "description": "Gestión de ubicaciones a contar, registro móvil de ubicaciones vacías o llenas y exportación de resultados para auditoría de inventario.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
