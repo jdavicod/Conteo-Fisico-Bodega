@@ -5,18 +5,23 @@ import {
   Smartphone, 
   FileSpreadsheet, 
   QrCode, 
-  BarChart3 
+  BarChart3,
+  Wifi,
+  WifiOff,
+  RefreshCw
 } from 'lucide-react';
 import { ActiveTab, LocationItem } from '../types';
+import { SyncStatus } from '../utils/apiSync';
 
 interface Props {
   activeTab: ActiveTab;
   onSelectTab: (tab: ActiveTab) => void;
   locations: LocationItem[];
   onOpenSync: () => void;
+  syncStatus?: SyncStatus;
 }
 
-export function Navbar({ activeTab, onSelectTab, locations, onOpenSync }: Props) {
+export function Navbar({ activeTab, onSelectTab, locations, onOpenSync, syncStatus = 'connected' }: Props) {
   const total = locations.length;
   const counted = locations.filter(l => l.status !== 'pendiente').length;
   const isAllCounted = total > 0 && total === counted;
@@ -36,12 +41,29 @@ export function Navbar({ activeTab, onSelectTab, locations, onOpenSync }: Props)
                   Conteo Físico de Bodega
                 </h1>
                 <span className="hidden sm:inline-flex text-3xs font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600 border border-zinc-200">
-                  Web App • Sin Hosting de Pago
+                  Web App
                 </span>
               </div>
-              <p className="text-2xs text-zinc-500 hidden sm:block">
-                Gestión, conteo móvil táctil y exportación Excel
-              </p>
+              
+              {/* Real-time sync status indicator */}
+              <div className="flex items-center gap-1.5 text-2xs mt-0.5">
+                {syncStatus === 'connected' ? (
+                  <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    Sincronización PC ↔ Celular en Vivo
+                  </span>
+                ) : syncStatus === 'syncing' ? (
+                  <span className="inline-flex items-center gap-1 text-blue-700 font-medium">
+                    <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                    Sincronizando...
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-amber-700 font-medium">
+                    <WifiOff className="w-2.5 h-2.5" />
+                    Modo Local (Offline)
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
