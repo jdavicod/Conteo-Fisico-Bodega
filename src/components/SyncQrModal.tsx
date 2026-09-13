@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { X, Smartphone, Copy, Check, Info, ExternalLink, Globe } from 'lucide-react';
+import { X, Smartphone, Copy, Check, Info, Radio, RefreshCw } from 'lucide-react';
 import { LocationItem } from '../types';
 import { encodeLocationsToShareString } from '../utils/storage';
 
@@ -8,29 +8,42 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   locations: LocationItem[];
+  roomId: string;
   onImportSharedString: (str: string) => boolean;
+  onChangeRoomId?: (newRoom: string) => void;
 }
 
-export function SyncQrModal({ isOpen, onClose, locations, onImportSharedString }: Props) {
+export function SyncQrModal({ 
+  isOpen, 
+  onClose, 
+  locations, 
+  roomId, 
+  onImportSharedString,
+  onChangeRoomId 
+}: Props) {
   const [copied, setCopied] = useState(false);
+  const [customRoom, setCustomRoom] = useState(roomId);
+  const [isEditingRoom, setIsEditingRoom] = useState(false);
 
   if (!isOpen) return null;
 
   // Resolve base URL:
   // If running in development (ais-dev-...), replace with the public preview (ais-pre-...)
-  // so scanning with mobile does NOT give Google 403 Forbidden.
+  // If deployed to Vercel or custom domain, uses current origin directly.
   let origin = window.location.origin;
   if (origin.includes('ais-dev-')) {
     origin = origin.replace('ais-dev-', 'ais-pre-');
   }
 
-  const baseUrl = origin + window.location.pathname;
   const encodedData = encodeLocationsToShareString(locations);
-
-  // If there are locations and data length fits in QR safely, attach #data=
-  const shareableUrl = (encodedData.length > 0 && encodedData.length < 1600)
-    ? `${baseUrl}#data=${encodedData}` 
-    : baseUrl;
+  
+  // Create shareable URL containing ?room=<roomId>
+  const url = new URL(origin + window.location.pathname);
+  url.searchParams.set('room', roomId);
+  if (encodedData && encodedData.length > 0 && encodedData.length < 1500) {
+    url.hash = `data=${encodedData}`;
+  }
+  const shareableUrl = url.toString();
 
   const handleCopy = () => {
     navigator.clipboard.writeText(shareableUrl).then(() => {
@@ -39,9 +52,17 @@ export function SyncQrModal({ isOpen, onClose, locations, onImportSharedString }
     });
   };
 
+  const handleSaveRoom = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (customRoom.trim() && onChangeRoomId) {
+      onChangeRoomId(customRoom.trim());
+      setIsEditingRoom(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-2xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-zinc-200 relative animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-zinc-200 relative animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 p-1.5 text-zinc-400 hover:text-zinc-600 rounded-lg hover:bg-zinc-100"
@@ -55,31 +76,35 @@ export function SyncQrModal({ isOpen, onClose, locations, onImportSharedString }
           </div>
           <div>
             <h3 className="text-base font-bold text-zinc-900">
-              Conectar Celular sin Error 403
+              Sincronización PC ↔ Celular en Vivo
             </h3>
-            <span className="text-2xs text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full">
-              Enlace Público Configurado
+            <span className="inline-flex items-center gap-1 text-2xs text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full">
+              <Radio className="w-2.5 h-2.5 text-emerald-600 animate-pulse" />
+              Sala Activa: {roomId}
             </span>
           </div>
         </div>
 
-        <p className="text-xs text-zinc-600 mb-4 leading-relaxed">
-          Escanea este código QR con la cámara de tu teléfono. Te llevará al enlace público optimizado para no pedir inicio de sesión ni dar error 403:
+        <p className="text-xs text-zinc-600 mb-3 leading-relaxed">
+          Escanea este código QR con la cámara de tu celular. Al abrirlo, cualquier conteo que realices en los pasillos se verá <strong>en tiempo real en la pantalla de este computador</strong> para descargar el Excel.
         </p>
 
         {/* QR container */}
-        <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-5 flex flex-col items-center justify-center mb-4">
+        <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-4 flex flex-col items-center justify-center mb-3">
           <div className="p-3 bg-white rounded-lg shadow-2xs border border-zinc-200">
             <QRCodeSVG 
               value={shareableUrl}
-              size={180}
+              size={175}
               level="M"
               includeMargin={false}
             />
           </div>
-          <p className="text-2xs font-mono text-zinc-500 mt-3 text-center break-all max-w-xs">
-            {baseUrl}
-          </p>
+          <div className="mt-3 text-center">
+            <span className="text-3xs uppercase tracking-wider text-zinc-400 font-bold">Código de Sala</span>
+            <p className="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-md border border-blue-100 mt-0.5">
+              {roomId}
+            </p>
+          </div>
         </div>
 
         {/* Copy Link button & tips */}
@@ -89,15 +114,57 @@ export function SyncQrModal({ isOpen, onClose, locations, onImportSharedString }
             className="w-full py-2.5 px-4 bg-zinc-900 hover:bg-zinc-800 text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer"
           >
             {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-            <span>{copied ? '¡Enlace público copiado!' : 'Copiar enlace público al portapapeles'}</span>
+            <span>{copied ? '¡Enlace de sincronización copiado!' : 'Copiar enlace al portapapeles'}</span>
           </button>
 
-          <div className="p-3 bg-amber-50/80 rounded-xl border border-amber-200 flex items-start gap-2 text-2xs text-amber-900">
-            <Info className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+          {/* Change Room Code Form (Optional) */}
+          {isEditingRoom ? (
+            <form onSubmit={handleSaveRoom} className="p-3 bg-zinc-50 border border-zinc-200 rounded-xl">
+              <label className="block text-2xs font-semibold text-zinc-700 mb-1">
+                Escribe un nombre de sala (ej. mi_bodega):
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  required
+                  value={customRoom}
+                  onChange={(e) => setCustomRoom(e.target.value)}
+                  className="flex-1 text-xs px-2.5 py-1.5 bg-white border border-zinc-300 rounded-lg font-mono"
+                  placeholder="ej. bodega_principal"
+                />
+                <button
+                  type="submit"
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg cursor-pointer"
+                >
+                  Unirse
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingRoom(false)}
+                  className="px-2 py-1.5 text-zinc-500 hover:text-zinc-700 text-xs"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => setIsEditingRoom(true)}
+                className="text-2xs text-zinc-500 hover:text-blue-600 font-medium underline"
+              >
+                ¿Quieres usar tu propio código o nombre de sala?
+              </button>
+            </div>
+          )}
+
+          <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-100 flex items-start gap-2 text-2xs text-blue-900">
+            <Info className="w-4 h-4 shrink-0 text-blue-600 mt-0.5" />
             <div>
-              <strong>¿Por qué salía el error 403?</strong>
-              <p className="mt-0.5 text-amber-800">
-                El celular intentaba acceder a la consola privada de edición de AI Studio. Para que cualquiera en la bodega pueda entrar sin cuenta de Google, se usa este enlace público o se presiona <strong>Publish</strong>.
+              <strong>100% en la nube sin instalar nada</strong>
+              <p className="mt-0.5 text-blue-800">
+                Funciona directamente en la web (Vercel). No requiere permisos de administrador en el computador del trabajo.
               </p>
             </div>
           </div>

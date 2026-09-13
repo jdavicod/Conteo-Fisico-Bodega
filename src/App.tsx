@@ -6,15 +6,11 @@ import {
   decodeLocationsFromShareString 
 } from './utils/storage';
 import { 
-  fetchServerLocations, 
-  pushAllLocationsToServer, 
-  patchLocationStatusOnServer,
-  deleteLocationOnServer,
-  deleteBulkLocationsOnServer,
-  putLocationOnServer,
-  subscribeToLiveUpdates, 
-  SyncStatus 
-} from './utils/apiSync';
+  CloudSyncService, 
+  CloudSyncStatus, 
+  getOrCreateRoomId, 
+  setCustomRoomId 
+} from './utils/cloudSync';
 import { Navbar } from './components/Navbar';
 import { UploadManageTab } from './components/UploadManageTab';
 import { MobileCountTab } from './components/MobileCountTab';
@@ -45,90 +41,85 @@ export default function App() {
     return 'cargar';
   });
 
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>('syncing');
+  const [roomId, setRoomId] = useState<string>(() => getOrCreateRoomId());
+  const [syncStatus, setSyncStatus] = useState<CloudSyncStatus>('connecting');
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
-  const isInitialMount = useRef(true);
 
-  // 1. Initial fetch from server and live SSE subscription
+  const cloudSyncRef = useRef<CloudSyncService | null>(null);
+  const locationsRef = useRef<LocationItem[]>(locations);
+  locationsRef.current = locations;
+
+  // Initialize Cloud Sync Service
   useEffect(() => {
-    // Initial fetch from server
-    fetchServerLocations().then(serverItems => {
-      if (serverItems && serverItems.length > 0) {
-        setLocations(serverItems);
-        saveLocations(serverItems);
-      } else {
-        // If server is empty, initialize with current client items
-        const local = loadLocations();
-        if (local.length > 0) {
-          pushAllLocationsToServer(local);
+    const service = new CloudSyncService(roomId);
+    cloudSyncRef.current = service;
+
+    const unsubStatus = service.onStatusChange((status) => {
+      setSyncStatus(status);
+    });
+
+    const unsubMessage = service.onMessage((msg) => {
+      if (msg.type === 'UPDATE_STATUS' && msg.payload) {
+        const { id, status, countedAt } = msg.payload;
+        setLocations((prev) => {
+          const next = prev.map((item) =>
+            item.id === id ? { ...item, status, countedAt } : item
+          );
+          saveLocations(next);
+          return next;
+        });
+      } else if (msg.type === 'REPLACE_ALL' && msg.payload?.locations) {
+        setLocations(msg.payload.locations);
+        saveLocations(msg.payload.locations);
+      } else if (msg.type === 'REQUEST_SYNC') {
+        // Un nuevo dispositivo (ej. celular) entró a la sala; le compartimos el listado actual
+        if (locationsRef.current.length > 0) {
+          service.sendSyncResponse(locationsRef.current);
+        }
+      } else if (msg.type === 'SYNC_RESPONSE' && msg.payload?.locations) {
+        // Si nuestro listado local estaba vacío o desactualizado, adoptamos el del compañero
+        if (locationsRef.current.length === 0 || locationsRef.current.every(l => l.status === 'pendiente')) {
+          setLocations(msg.payload.locations);
+          saveLocations(msg.payload.locations);
         }
       }
     });
 
-    // Subscribe to real-time events (Server-Sent Events)
-    const unsubscribe = subscribeToLiveUpdates((payload) => {
-      if (payload.locations) {
-        setLocations(payload.locations);
-        saveLocations(payload.locations);
-      } else if (payload.updatedItem) {
-        const updated = payload.updatedItem;
-        setLocations(prev => {
-          const next = prev.map(item => item.id === updated.id ? updated : item);
-          saveLocations(next);
-          return next;
-        });
-      } else if (payload.deletedId) {
-        const delId = payload.deletedId;
-        setLocations(prev => {
-          const next = prev.filter(item => item.id !== delId);
-          saveLocations(next);
-          return next;
-        });
-      }
-    }, (status) => {
-      setSyncStatus(status);
-    });
-
     return () => {
-      unsubscribe();
+      unsubStatus();
+      unsubMessage();
+      service.destroy();
+      cloudSyncRef.current = null;
     };
-  }, []);
-
-  // Backup sync to local storage
-  useEffect(() => {
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
-      return;
-    }
-    saveLocations(locations);
-  }, [locations]);
+  }, [roomId]);
 
   // Handle status update (HU-03: guarda de inmediato y propaga al PC en vivo)
   const handleUpdateStatus = (id: string, status: LocationStatus) => {
     const countedAt = status !== 'pendiente' ? new Date().toISOString() : undefined;
 
-    // Optimistic local update
-    setLocations(prev => {
-      const next = prev.map(item => {
-        if (item.id === id) {
-          return { ...item, status, countedAt };
-        }
-        return item;
-      });
+    // 1. Optimistic local update (instantáneo en la pantalla del celular)
+    setLocations((prev) => {
+      const next = prev.map((item) =>
+        item.id === id ? { ...item, status, countedAt } : item
+      );
       saveLocations(next);
       return next;
     });
 
-    // Send to server to notify PC in real time via SSE
-    patchLocationStatusOnServer(id, status);
+    // 2. Broadcast en vivo al PC
+    cloudSyncRef.current?.broadcastStatusUpdate(id, status);
   };
 
   // Handle mass update / replacement of locations (from PC file upload)
   const handleUpdateLocations = (newItems: LocationItem[]) => {
     setLocations(newItems);
     saveLocations(newItems);
-    // Push to server so mobile gets the list instantly
-    pushAllLocationsToServer(newItems);
+    cloudSyncRef.current?.broadcastReplaceAll(newItems);
+  };
+
+  const handleChangeRoomId = (newRoom: string) => {
+    setCustomRoomId(newRoom);
+    setRoomId(newRoom);
   };
 
   const handleImportSharedString = (str: string): boolean => {
@@ -136,7 +127,7 @@ export default function App() {
     if (decoded && decoded.length > 0) {
       setLocations(decoded);
       saveLocations(decoded);
-      pushAllLocationsToServer(decoded);
+      cloudSyncRef.current?.broadcastReplaceAll(decoded);
       return true;
     }
     return false;
@@ -151,6 +142,7 @@ export default function App() {
         locations={locations}
         onOpenSync={() => setIsSyncModalOpen(true)}
         syncStatus={syncStatus}
+        roomId={roomId}
       />
 
       {/* Main Workspace Body */}
@@ -188,7 +180,7 @@ export default function App() {
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             <span>
-              Gestión y Conteo Físico de Bodega • Sincronización en Tiempo Real PC ↔ Celular
+              Gestión y Conteo Físico de Bodega • Sincronización en Vivo PC ↔ Celular
             </span>
           </div>
           <div className="flex items-center gap-3 text-2xs text-zinc-400">
@@ -198,7 +190,7 @@ export default function App() {
             <span>•</span>
             <span>HU-03 Contar</span>
             <span>•</span>
-            <span>HU-04 Exportar</span>
+            <span>HU-04 Exportar Excel</span>
           </div>
         </div>
       </footer>
@@ -208,7 +200,9 @@ export default function App() {
         isOpen={isSyncModalOpen}
         onClose={() => setIsSyncModalOpen(false)}
         locations={locations}
+        roomId={roomId}
         onImportSharedString={handleImportSharedString}
+        onChangeRoomId={handleChangeRoomId}
       />
     </div>
   );

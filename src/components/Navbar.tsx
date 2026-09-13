@@ -3,25 +3,32 @@ import {
   PackageCheck, 
   Layers, 
   Smartphone, 
-  FileSpreadsheet, 
   QrCode, 
   BarChart3,
-  Wifi,
   WifiOff,
-  RefreshCw
+  RefreshCw,
+  Radio
 } from 'lucide-react';
 import { ActiveTab, LocationItem } from '../types';
-import { SyncStatus } from '../utils/apiSync';
+import { CloudSyncStatus } from '../utils/cloudSync';
 
 interface Props {
   activeTab: ActiveTab;
   onSelectTab: (tab: ActiveTab) => void;
   locations: LocationItem[];
   onOpenSync: () => void;
-  syncStatus?: SyncStatus;
+  syncStatus?: CloudSyncStatus;
+  roomId?: string;
 }
 
-export function Navbar({ activeTab, onSelectTab, locations, onOpenSync, syncStatus = 'connected' }: Props) {
+export function Navbar({ 
+  activeTab, 
+  onSelectTab, 
+  locations, 
+  onOpenSync, 
+  syncStatus = 'connected',
+  roomId = ''
+}: Props) {
   const total = locations.length;
   const counted = locations.filter(l => l.status !== 'pendiente').length;
   const isAllCounted = total > 0 && total === counted;
@@ -46,24 +53,33 @@ export function Navbar({ activeTab, onSelectTab, locations, onOpenSync, syncStat
               </div>
               
               {/* Real-time sync status indicator */}
-              <div className="flex items-center gap-1.5 text-2xs mt-0.5">
+              <button 
+                onClick={onOpenSync}
+                className="flex items-center gap-1.5 text-2xs mt-0.5 cursor-pointer hover:opacity-80 transition-opacity"
+                title="Haz clic para ver o cambiar la sala de sincronización con el celular"
+              >
                 {syncStatus === 'connected' ? (
                   <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    Sincronización PC ↔ Celular en Vivo
+                    <span>Sincronizado en Vivo</span>
+                    {roomId && (
+                      <span className="font-mono text-3xs text-emerald-800 bg-emerald-100/70 px-1 rounded">
+                        {roomId}
+                      </span>
+                    )}
                   </span>
-                ) : syncStatus === 'syncing' ? (
+                ) : syncStatus === 'connecting' ? (
                   <span className="inline-flex items-center gap-1 text-blue-700 font-medium">
                     <RefreshCw className="w-2.5 h-2.5 animate-spin" />
-                    Sincronizando...
+                    Conectando sala...
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 text-amber-700 font-medium">
                     <WifiOff className="w-2.5 h-2.5" />
-                    Modo Local (Offline)
+                    Modo Local (Reconectando...)
                   </span>
                 )}
-              </div>
+              </button>
             </div>
           </div>
 
@@ -120,10 +136,10 @@ export function Navbar({ activeTab, onSelectTab, locations, onOpenSync, syncStat
             <button
               onClick={onOpenSync}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-zinc-700 bg-white hover:bg-zinc-50 border border-zinc-200 rounded-lg transition-colors shadow-2xs cursor-pointer"
-              title="Abrir en celular mediante código QR"
+              title="Conectar celular mediante código QR"
             >
               <QrCode className="w-4 h-4 text-blue-600" />
-              <span className="hidden sm:inline">Conectar Móvil (QR)</span>
+              <span className="hidden sm:inline">Conectar Celular (QR)</span>
             </button>
           </div>
         </div>
