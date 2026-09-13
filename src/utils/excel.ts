@@ -11,7 +11,7 @@ export function exportToExcel(items: LocationItem[], fileName: string = 'Resulta
       'Código Ubicación': item.code,
       'Nivel': item.nivel,
       'Columna': item.columna,
-      'Estantería': item.estanteria,
+      'Estantería (Letra)': item.estanteria,
       'Posición': item.posicion,
       'Estado Conteo': estadoTexto,
       'Fecha/Hora Conteo': item.countedAt ? new Date(item.countedAt).toLocaleString() : '',
@@ -23,7 +23,7 @@ export function exportToExcel(items: LocationItem[], fileName: string = 'Resulta
     { wch: 18 }, // Código Ubicación
     { wch: 10 }, // Nivel
     { wch: 12 }, // Columna
-    { wch: 14 }, // Estantería
+    { wch: 16 }, // Estantería
     { wch: 12 }, // Posición
     { wch: 16 }, // Estado Conteo
     { wch: 22 }, // Fecha/Hora Conteo
@@ -65,14 +65,15 @@ export function exportToCsv(items: LocationItem[], fileName: string = 'Resultado
   document.body.removeChild(link);
 }
 
-// Plantilla con 4 columnas separadas
+// Plantilla con 4 columnas separadas (Estantería como Letra)
 export function downloadTemplate4Columns() {
   const data = [
-    { Nivel: '1', Columna: '01', Estanteria: '1', Posicion: '1' },
-    { Nivel: '1', Columna: '01', Estanteria: '1', Posicion: '2' },
-    { Nivel: '1', Columna: '02', Estanteria: '1', Posicion: '1' },
-    { Nivel: '2', Columna: '01', Estanteria: '1', Posicion: '1' },
-    { Nivel: '2', Columna: '01', Estanteria: '2', Posicion: '1' },
+    { Nivel: '1', Columna: '01', Estanteria: 'A', Posicion: '1' },
+    { Nivel: '1', Columna: '01', Estanteria: 'A', Posicion: '2' },
+    { Nivel: '1', Columna: '02', Estanteria: 'A', Posicion: '1' },
+    { Nivel: '2', Columna: '01', Estanteria: 'A', Posicion: '1' },
+    { Nivel: '2', Columna: '01', Estanteria: 'B', Posicion: '1' },
+    { Nivel: '2', Columna: '02', Estanteria: 'B', Posicion: '2' },
   ];
   const ws = XLSX.utils.json_to_sheet(data);
   ws['!cols'] = [{ wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 12 }];
@@ -81,14 +82,15 @@ export function downloadTemplate4Columns() {
   XLSX.writeFile(wb, 'Plantilla_4_Columnas.xlsx');
 }
 
-// Plantilla con 1 columna combinada
+// Plantilla con 1 columna combinada N#C##E(letra)P#
 export function downloadTemplate1Column() {
   const data = [
-    { Ubicacion: 'N1C01E1P1' },
-    { Ubicacion: 'N1C01E1P2' },
-    { Ubicacion: 'N1C02E1P1' },
-    { Ubicacion: 'N2C01E1P1' },
-    { Ubicacion: 'N2C01E2P1' },
+    { Ubicacion: 'N1C01EAP1' },
+    { Ubicacion: 'N1C01EAP2' },
+    { Ubicacion: 'N1C02EAP1' },
+    { Ubicacion: 'N2C01EAP1' },
+    { Ubicacion: 'N2C01EBP1' },
+    { Ubicacion: 'N2C02EBP2' },
   ];
   const ws = XLSX.utils.json_to_sheet(data);
   ws['!cols'] = [{ wch: 20 }];

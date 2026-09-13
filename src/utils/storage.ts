@@ -1,21 +1,21 @@
 import { LocationItem } from '../types';
 import { parseCombinedCode } from './parser';
 
-const STORAGE_KEY = 'bodega_conteo_ubicaciones_v2';
+const STORAGE_KEY = 'bodega_conteo_ubicaciones_v3';
 
 export const SAMPLE_LOCATIONS: LocationItem[] = [
-  { id: '1', code: 'N1C01E1P1', nivel: '1', columna: '01', estanteria: '1', posicion: '1', status: 'pendiente' },
-  { id: '2', code: 'N1C01E1P2', nivel: '1', columna: '01', estanteria: '1', posicion: '2', status: 'pendiente' },
-  { id: '3', code: 'N1C01E2P1', nivel: '1', columna: '01', estanteria: '2', posicion: '1', status: 'pendiente' },
-  { id: '4', code: 'N1C02E1P1', nivel: '1', columna: '02', estanteria: '1', posicion: '1', status: 'pendiente' },
-  { id: '5', code: 'N1C02E1P2', nivel: '1', columna: '02', estanteria: '1', posicion: '2', status: 'pendiente' },
-  { id: '6', code: 'N2C01E1P1', nivel: '2', columna: '01', estanteria: '1', posicion: '1', status: 'pendiente' },
-  { id: '7', code: 'N2C01E1P2', nivel: '2', columna: '01', estanteria: '1', posicion: '2', status: 'pendiente' },
-  { id: '8', code: 'N2C02E1P1', nivel: '2', columna: '02', estanteria: '1', posicion: '1', status: 'pendiente' },
-  { id: '9', code: 'N2C02E1P2', nivel: '2', columna: '02', estanteria: '1', posicion: '2', status: 'pendiente' },
-  { id: '10', code: 'N3C01E1P1', nivel: '3', columna: '01', estanteria: '1', posicion: '1', status: 'pendiente' },
-  { id: '11', code: 'N3C01E1P2', nivel: '3', columna: '01', estanteria: '1', posicion: '2', status: 'pendiente' },
-  { id: '12', code: 'N3C02E1P1', nivel: '3', columna: '02', estanteria: '1', posicion: '1', status: 'pendiente' },
+  { id: '1', code: 'N1C01EAP1', nivel: '1', columna: '01', estanteria: 'A', posicion: '1', status: 'pendiente' },
+  { id: '2', code: 'N1C01EAP2', nivel: '1', columna: '01', estanteria: 'A', posicion: '2', status: 'pendiente' },
+  { id: '3', code: 'N1C01EBP1', nivel: '1', columna: '01', estanteria: 'B', posicion: '1', status: 'pendiente' },
+  { id: '4', code: 'N1C02EAP1', nivel: '1', columna: '02', estanteria: 'A', posicion: '1', status: 'pendiente' },
+  { id: '5', code: 'N1C02EAP2', nivel: '1', columna: '02', estanteria: 'A', posicion: '2', status: 'pendiente' },
+  { id: '6', code: 'N2C01EAP1', nivel: '2', columna: '01', estanteria: 'A', posicion: '1', status: 'pendiente' },
+  { id: '7', code: 'N2C01EAP2', nivel: '2', columna: '01', estanteria: 'A', posicion: '2', status: 'pendiente' },
+  { id: '8', code: 'N2C02EAP1', nivel: '2', columna: '02', estanteria: 'A', posicion: '1', status: 'pendiente' },
+  { id: '9', code: 'N2C02EBP1', nivel: '2', columna: '02', estanteria: 'B', posicion: '1', status: 'pendiente' },
+  { id: '10', code: 'N3C01EAP1', nivel: '3', columna: '01', estanteria: 'A', posicion: '1', status: 'pendiente' },
+  { id: '11', code: 'N3C01EAP2', nivel: '3', columna: '01', estanteria: 'A', posicion: '2', status: 'pendiente' },
+  { id: '12', code: 'N3C02EBP1', nivel: '3', columna: '02', estanteria: 'B', posicion: '1', status: 'pendiente' },
 ];
 
 export function loadLocations(): LocationItem[] {
@@ -73,7 +73,7 @@ export function decodeLocationsFromShareString(encoded: string): LocationItem[] 
         code: String(code),
         nivel: parsed ? parsed.nivel : '1',
         columna: parsed ? parsed.columna : '01',
-        estanteria: parsed ? parsed.estanteria : '1',
+        estanteria: parsed ? parsed.estanteria : 'A',
         posicion: parsed ? parsed.posicion : '1',
         status,
         countedAt: status !== 'pendiente' ? new Date().toISOString() : undefined,

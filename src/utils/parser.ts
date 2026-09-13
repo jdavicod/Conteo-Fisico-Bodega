@@ -1,9 +1,10 @@
 import * as XLSX from 'xlsx';
 import { LocationItem, LocationStatus, ParseError } from '../types';
 
-// Regex que valida y extrae N#C##E#P#
+// Regex que valida y extrae N#C##E(letra)P#
 // Admite variaciones de mayúsculas/minúsculas y separadores opcionales (guion, espacio, punto)
-export const COMBINED_PATTERN_REGEX = /^N\s*(\d+)\s*[-_./\s]?\s*C\s*(\d+)\s*[-_./\s]?\s*E\s*(\d+)\s*[-_./\s]?\s*P\s*(\d+)$/i;
+// Estantería es formato letra (ej: A, B, C, etc. o EA, EB)
+export const COMBINED_PATTERN_REGEX = /^N\s*(\d+)\s*[-_./\s]?\s*C\s*(\d+)\s*[-_./\s]?\s*E\s*([A-Za-z0-9]+)\s*[-_./\s]?\s*P\s*(\d+)$/i;
 
 export interface ParseResult {
   validLocations: LocationItem[];
@@ -12,14 +13,14 @@ export interface ParseResult {
 }
 
 /**
- * Normaliza y formatea el código combinado canónico: ej: N1C01E1P1
+ * Normaliza y formatea el código combinado canónico: ej: N1C01EAP1
  */
 export function formatCode(nivel: string, columna: string, estanteria: string, posicion: string): string {
   // Limpiar caracteres "N", "C", "E", "P" si vinieron incluidos
-  const cleanN = nivel.replace(/^N/i, '').trim();
-  const cleanC = columna.replace(/^C/i, '').trim();
-  const cleanE = estanteria.replace(/^E/i, '').trim();
-  const cleanP = posicion.replace(/^P/i, '').trim();
+  const cleanN = String(nivel).replace(/^N/i, '').trim();
+  const cleanC = String(columna).replace(/^C/i, '').trim();
+  const cleanE = String(estanteria).replace(/^E/i, '').trim().toUpperCase();
+  const cleanP = String(posicion).replace(/^P/i, '').trim();
 
   // Asegurar formato C con 2 dígitos como especifica el backlog: N#C##E#P#
   const padC = cleanC.length === 1 ? cleanC.padStart(2, '0') : cleanC;
@@ -28,7 +29,7 @@ export function formatCode(nivel: string, columna: string, estanteria: string, p
 }
 
 /**
- * Intenta parsear un código único combinado (ej: "N1C01E1P1" o "n2 c05 e1 p2")
+ * Intenta parsear un código único combinado (ej: "N1C01EAP1" o "n2 c05 eB p2")
  */
 export function parseCombinedCode(codeStr: string): { nivel: string; columna: string; estanteria: string; posicion: string } | null {
   const match = codeStr.trim().match(COMBINED_PATTERN_REGEX);
@@ -37,7 +38,7 @@ export function parseCombinedCode(codeStr: string): { nivel: string; columna: st
   return {
     nivel: match[1],
     columna: match[2].length === 1 ? match[2].padStart(2, '0') : match[2],
-    estanteria: match[3],
+    estanteria: match[3].toUpperCase(),
     posicion: match[4],
   };
 }
@@ -72,7 +73,6 @@ export function parsePastedLines(text: string): ParseResult {
   }
 
   const rawRows = lines.map(line => {
-    // Si contiene tabulador, punto y coma o coma, dividir columnas
     if (line.includes('\t')) return line.split('\t').map(c => c.trim());
     if (line.includes(';')) return line.split(';').map(c => c.trim());
     if (line.includes(',')) return line.split(',').map(c => c.trim());
@@ -87,7 +87,6 @@ function processRawMatrix(rows: any[][]): ParseResult {
   const errors: ParseError[] = [];
   const seenCodes = new Set<string>();
 
-  // Analizar cabecera si existe
   let headerRowIndex = -1;
   let nivelCol = -1;
   let columnaCol = -1;
@@ -158,24 +157,23 @@ function processRawMatrix(rows: any[][]): ParseResult {
         continue;
       }
 
-      // Validar que sean numéricos o formato N#
-      const cleanN = rawN.replace(/^N/i, '');
-      const cleanC = rawC.replace(/^C/i, '');
-      const cleanE = rawE.replace(/^E/i, '');
-      const cleanP = rawP.replace(/^P/i, '');
+      const cleanN = rawN.replace(/^N/i, '').trim();
+      const cleanC = rawC.replace(/^C/i, '').trim();
+      const cleanE = rawE.replace(/^E/i, '').trim().toUpperCase();
+      const cleanP = rawP.replace(/^P/i, '').trim();
 
-      if (!/^\d+$/.test(cleanN) || !/^\d+$/.test(cleanC) || !/^\d+$/.test(cleanE) || !/^\d+$/.test(cleanP)) {
+      // Nivel, Columna y Posición deben ser numéricos; Estantería es formato letra (o alfanumérico)
+      if (!/^\d+$/.test(cleanN) || !/^\d+$/.test(cleanC) || !/^[A-Za-z0-9]+$/.test(cleanE) || !/^\d+$/.test(cleanP)) {
         errors.push({
           row: rowNum,
           value: `N:${rawN}, C:${rawC}, E:${rawE}, P:${rawP}`,
-          reason: 'Los valores de Nivel, Columna, Estantería y Posición deben ser numéricos.',
+          reason: 'Nivel, Columna y Posición deben ser números. La Estantería debe ser letra (ej: A, B, C).',
         });
         continue;
       }
 
       const code = formatCode(cleanN, cleanC, cleanE, cleanP);
       if (seenCodes.has(code)) {
-        // Ignorar duplicado pero no contar como error fatal
         continue;
       }
       seenCodes.add(code);
@@ -190,13 +188,12 @@ function processRawMatrix(rows: any[][]): ParseResult {
         status: 'pendiente',
       });
     } else {
-      // Formato 1 columna combinada o intento de detectar 4 columnas sin encabezados
-      // Si la fila tiene al menos 4 celdas numéricas consecutivas, tomar como 4 columnas
+      // Intento de detectar 4 columnas sin encabezados
       if (row.length >= 4 && /^\d+$/.test(String(row[0]).trim()) && /^\d+$/.test(String(row[1]).trim())) {
         formatDetected = '4_columnas';
         const rawN = String(row[0]).trim();
         const rawC = String(row[1]).trim();
-        const rawE = String(row[2]).trim();
+        const rawE = String(row[2]).trim().toUpperCase();
         const rawP = String(row[3]).trim();
         const code = formatCode(rawN, rawC, rawE, rawP);
 
@@ -215,7 +212,7 @@ function processRawMatrix(rows: any[][]): ParseResult {
         continue;
       }
 
-      // Probar columna combinada
+      // Columna combinada
       const colIdxToUse = combinedCol !== -1 ? combinedCol : 0;
       const rawValue = String(row[colIdxToUse] ?? '').trim();
 
@@ -226,7 +223,7 @@ function processRawMatrix(rows: any[][]): ParseResult {
         errors.push({
           row: rowNum,
           value: rawValue,
-          reason: `No cumple el patrón requerido N#C##E#P# (Ej: "N1C01E1P1").`,
+          reason: `No cumple el patrón N#C##E(letra)P# (Ej: "N1C01EAP1").`,
         });
         continue;
       }

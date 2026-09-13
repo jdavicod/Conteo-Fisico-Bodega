@@ -41,7 +41,7 @@ export function ExportCompareTab({ locations, onOpenSyncModal, onGoToCount }: Pr
   }, [locations]);
 
   const estanterias = useMemo(() => {
-    return Array.from(new Set(locations.map(l => l.estanteria))).sort((a, b) => Number(a) - Number(b));
+    return Array.from(new Set(locations.map(l => l.estanteria))).sort((a, b) => a.localeCompare(b));
   }, [locations]);
 
   const posiciones = useMemo(() => {

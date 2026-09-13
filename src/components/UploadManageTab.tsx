@@ -53,7 +53,7 @@ export function UploadManageTab({ locations, onUpdateLocations, onGoToCount, onO
   const [isAdding, setIsAdding] = useState(false);
   const [newNivel, setNewNivel] = useState('1');
   const [newColumna, setNewColumna] = useState('01');
-  const [newEstanteria, setNewEstanteria] = useState('1');
+  const [newEstanteria, setNewEstanteria] = useState('A');
   const [newPosicion, setNewPosicion] = useState('1');
   const [addError, setAddError] = useState<string | null>(null);
 
@@ -253,7 +253,7 @@ export function UploadManageTab({ locations, onUpdateLocations, onGoToCount, onO
               HU-01: Cargar y HU-02: Administrar Ubicaciones
             </h2>
             <p className="text-sm text-zinc-500 mt-1 max-w-2xl">
-              Carga tu listado aceptando <strong>4 columnas separadas</strong> (Nivel, Columna, Estantería, Posición) o <strong>1 columna combinada</strong> con el formato <span className="font-mono bg-zinc-100 px-1.5 py-0.5 rounded text-zinc-800 font-semibold">N#C##E#P#</span> (ej. N1C01E1P1).
+              Carga tu listado aceptando <strong>4 columnas separadas</strong> (Nivel, Columna, Estantería, Posición) o <strong>1 columna combinada</strong> con el formato <span className="font-mono bg-zinc-100 px-1.5 py-0.5 rounded text-zinc-800 font-semibold">N#C##E(letra)P#</span> (ej. N1C01EAP1).
             </p>
           </div>
 
@@ -262,7 +262,7 @@ export function UploadManageTab({ locations, onUpdateLocations, onGoToCount, onO
             <button
               onClick={downloadTemplate4Columns}
               className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-zinc-700 bg-white hover:bg-zinc-50 border border-zinc-300 rounded-lg transition-colors shadow-2xs cursor-pointer"
-              title="Descargar plantilla Excel con 4 columnas"
+              title="Descargar plantilla Excel con 4 columnas (Estantería como Letra)"
             >
               <Download className="w-3.5 h-3.5 text-zinc-500" />
               <span>Plantilla 4 Cols</span>
@@ -271,10 +271,10 @@ export function UploadManageTab({ locations, onUpdateLocations, onGoToCount, onO
             <button
               onClick={downloadTemplate1Column}
               className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-zinc-700 bg-white hover:bg-zinc-50 border border-zinc-300 rounded-lg transition-colors shadow-2xs cursor-pointer"
-              title="Descargar plantilla Excel con 1 columna combinada N#C##E#P#"
+              title="Descargar plantilla Excel con 1 columna combinada N#C##E(letra)P#"
             >
               <Download className="w-3.5 h-3.5 text-zinc-500" />
-              <span>Plantilla N#C##E#P#</span>
+              <span>Plantilla N#C##E(letra)P#</span>
             </button>
           </div>
         </div>
@@ -393,10 +393,10 @@ export function UploadManageTab({ locations, onUpdateLocations, onGoToCount, onO
               Datos de Muestra (HU-01)
             </div>
             <h4 className="text-sm font-bold text-white mb-1">
-              Prueba con ubicaciones reales N#C##E#P#
+              Prueba con ubicaciones reales N#C##E(letra)P#
             </h4>
             <p className="text-xs text-zinc-400 leading-relaxed">
-              Carga instantáneamente 12 ubicaciones formateadas (Nivel 1 al 3, Columnas 01 y 02, Estanterías 1 y 2, Posición 1 y 2).
+              Carga instantáneamente 12 ubicaciones formateadas (Nivel 1 al 3, Columnas 01 y 02, Estanterías A y B, Posición 1 y 2).
             </p>
           </div>
 
@@ -405,13 +405,13 @@ export function UploadManageTab({ locations, onUpdateLocations, onGoToCount, onO
               onClick={() => {
                 import('../utils/storage').then(mod => {
                   onUpdateLocations(mod.SAMPLE_LOCATIONS);
-                  setSuccessMsg('Se cargaron las 12 ubicaciones de muestra en formato N#C##E#P#.');
+                  setSuccessMsg('Se cargaron las 12 ubicaciones de muestra en formato N#C##E(letra)P#.');
                   setParseErrors([]);
                 });
               }}
               className="w-full py-2 px-3 text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-lg transition-colors text-center cursor-pointer"
             >
-              Cargar Muestra N#C##E#P#
+              Cargar Muestra N#C##E(letra)P#
             </button>
 
             {locations.length > 0 && (
@@ -435,18 +435,18 @@ export function UploadManageTab({ locations, onUpdateLocations, onGoToCount, onO
               <ClipboardPaste className="w-4 h-4 text-blue-600" />
               Pegar listado de ubicaciones (1 por línea o 4 columnas separadas por tabulador/coma)
             </h4>
-            <span className="text-xs text-zinc-400">Ejemplo combinado: N1C01E1P1</span>
+            <span className="text-xs text-zinc-400">Ejemplo combinado: N1C01EAP1</span>
           </div>
           <textarea
             rows={5}
             value={pasteText}
             onChange={(e) => setPasteText(e.target.value)}
-            placeholder={`N1C01E1P1
-N1C01E1P2
-N1C02E1P1
+            placeholder={`N1C01EAP1
+N1C01EAP2
+N1C02EBP1
 o también 4 columnas:
-1	01	1	1
-1	01	1	2`}
+1	01	A	1
+1	01	A	2`}
             className="w-full text-xs font-mono p-3 border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <div className="flex justify-end gap-2">
@@ -554,14 +554,15 @@ o también 4 columnas:
               />
             </div>
             <div className="flex items-center gap-2">
-              <label className="text-xs text-zinc-500 font-mono">Estantería:</label>
+              <label className="text-xs text-zinc-500 font-mono">Estantería (Letra):</label>
               <input 
-                type="number" 
+                type="text" 
                 required 
-                min="1" 
+                maxLength={3}
+                placeholder="A"
                 value={newEstanteria} 
-                onChange={(e) => setNewEstanteria(e.target.value)} 
-                className="w-14 text-xs p-1.5 bg-white border border-zinc-300 rounded-md text-center font-mono"
+                onChange={(e) => setNewEstanteria(e.target.value.toUpperCase())} 
+                className="w-14 text-xs p-1.5 bg-white border border-zinc-300 rounded-md text-center font-mono uppercase"
               />
             </div>
             <div className="flex items-center gap-2">
@@ -771,14 +772,14 @@ o también 4 columnas:
                   />
                 </div>
                 <div>
-                  <label className="text-2xs font-semibold text-zinc-500 uppercase">Estantería (E#)</label>
+                  <label className="text-2xs font-semibold text-zinc-500 uppercase">Estantería (Letra: A, B...)</label>
                   <input
-                    type="number"
-                    min="1"
+                    type="text"
+                    maxLength={3}
                     required
                     value={editEstanteria}
-                    onChange={(e) => setEditEstanteria(e.target.value)}
-                    className="w-full text-xs p-2 border border-zinc-300 rounded-lg font-mono"
+                    onChange={(e) => setEditEstanteria(e.target.value.toUpperCase())}
+                    className="w-full text-xs p-2 border border-zinc-300 rounded-lg font-mono uppercase"
                   />
                 </div>
                 <div>

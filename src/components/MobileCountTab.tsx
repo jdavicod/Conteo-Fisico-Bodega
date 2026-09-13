@@ -77,7 +77,7 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
 
   const estanterias = useMemo(() => {
     const set = new Set(locations.map(l => l.estanteria));
-    return Array.from(set).sort((a, b) => Number(a) - Number(b));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [locations]);
 
   const posiciones = useMemo(() => {
