@@ -5,13 +5,11 @@ import {
   RotateCcw, 
   Filter, 
   Search, 
-  SlidersHorizontal, 
   Smartphone, 
-  Table, 
-  LayoutGrid, 
   Volume2, 
   VolumeX,
-  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   AlertCircle
 } from 'lucide-react';
 import { LocationItem, LocationStatus } from '../types';
@@ -32,11 +30,11 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
   const [filterStatus, setFilterStatus] = useState<'todos' | LocationStatus>('todos');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Dropdown state for filters
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+
   // Audio / feedback
   const [soundEnabled, setSoundEnabled] = useState(true);
-
-  // View switch: 'table' (HU-03 primary) or 'tactile_cards'
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
 
   // Audio feedback helper
   const playSound = (status: LocationStatus) => {
@@ -60,7 +58,11 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
     }
 
     if (typeof navigator !== 'undefined' && navigator.vibrate) {
-      navigator.vibrate(30);
+      try {
+        navigator.vibrate(35);
+      } catch {
+        // ignore
+      }
     }
   };
 
@@ -88,22 +90,15 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
   // HU-03: Combined filtering
   const filteredLocations = useMemo(() => {
     return locations.filter(l => {
-      // Nivel filter
       if (filterNivel !== 'todos' && l.nivel !== filterNivel) return false;
-      // Columna filter
       if (filterColumna !== 'todos' && l.columna !== filterColumna) return false;
-      // Estantería filter
       if (filterEstanteria !== 'todos' && l.estanteria !== filterEstanteria) return false;
-      // Posición filter
       if (filterPosicion !== 'todos' && l.posicion !== filterPosicion) return false;
-      // Status filter
       if (filterStatus !== 'todos' && l.status !== filterStatus) return false;
-      // Text search
       if (searchQuery.trim()) {
         const query = searchQuery.trim().toLowerCase();
         if (!l.code.toLowerCase().includes(query)) return false;
       }
-
       return true;
     });
   }, [locations, filterNivel, filterColumna, filterEstanteria, filterPosicion, filterStatus, searchQuery]);
@@ -122,13 +117,17 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
     setSearchQuery('');
   };
 
-  const hasActiveFilters = 
-    filterNivel !== 'todos' || 
-    filterColumna !== 'todos' || 
-    filterEstanteria !== 'todos' || 
-    filterPosicion !== 'todos' || 
-    filterStatus !== 'todos' || 
-    searchQuery !== '';
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (filterNivel !== 'todos') count++;
+    if (filterColumna !== 'todos') count++;
+    if (filterEstanteria !== 'todos') count++;
+    if (filterPosicion !== 'todos') count++;
+    if (filterStatus !== 'todos') count++;
+    return count;
+  }, [filterNivel, filterColumna, filterEstanteria, filterPosicion, filterStatus]);
+
+  const hasActiveFilters = activeFiltersCount > 0 || searchQuery.trim() !== '';
 
   // Stats
   const total = locations.length;
@@ -139,385 +138,380 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
 
   if (locations.length === 0) {
     return (
-      <div className="bg-white border border-zinc-200 rounded-xl p-8 text-center max-w-md mx-auto my-8">
+      <div className="bg-white border border-zinc-200 rounded-xl p-8 text-center max-w-md mx-auto my-8 shadow-xs">
         <Smartphone className="w-12 h-12 text-zinc-400 mx-auto mb-3" />
-        <h3 className="text-base font-bold text-zinc-900">No hay ubicaciones para contar</h3>
+        <h3 className="text-base font-bold text-zinc-900">No hay ubicaciones cargadas</h3>
         <p className="text-xs text-zinc-500 mt-1 mb-5">
-          Debes cargar primero las ubicaciones a contar (Épica 1: HU-01).
+          Carga primero el archivo Excel o pega el listado de ubicaciones en la pestaña Gestión.
         </p>
         <button
           onClick={onGoToManage}
-          className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg cursor-pointer"
+          className="px-4 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl cursor-pointer shadow-xs"
         >
-          Cargar Ubicaciones Ahora
+          Ir a Cargar Ubicaciones
         </button>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 max-w-4xl mx-auto pb-12" id="epic-2-workarea">
-      {/* Sticky Top Status & Progress Bar */}
-      <div className="bg-white border border-zinc-200 rounded-xl p-4 shadow-xs sticky top-2 z-20">
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span className="text-xs font-bold uppercase tracking-wider text-zinc-800">
-              HU-03: Conteo Físico Móvil
+    <div className="space-y-2.5 max-w-4xl mx-auto pb-16" id="epic-2-workarea">
+      {/* 
+        CUADRO COMPACTO SUPERIOR:
+        Diseñado para ocupar el mínimo espacio vertical posible en celular
+      */}
+      <div className="bg-white border border-zinc-200 rounded-xl p-2.5 sm:p-3 shadow-xs sticky top-16 z-20 space-y-2">
+        {/* Línea 1: Progreso + Conteo + Etiquetas Vacías/Llenas + Sonido */}
+        <div className="flex items-center justify-between gap-1.5 text-2xs">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span className="font-bold text-zinc-900">Conteo:</span>
+            <span className="font-semibold text-zinc-700 bg-zinc-100 px-1.5 py-0.5 rounded">
+              {counted}/{total} ({progressPercent}%)
+            </span>
+            <span className="inline-flex items-center gap-0.5 text-amber-800 bg-amber-50 border border-amber-200/80 px-1.5 py-0.5 rounded font-bold">
+              {emptyCount} Vacías
+            </span>
+            <span className="inline-flex items-center gap-0.5 text-blue-800 bg-blue-50 border border-blue-200/80 px-1.5 py-0.5 rounded font-bold">
+              {fullCount} Llenas
+            </span>
+            <span className="hidden sm:inline-flex items-center gap-0.5 text-zinc-600 bg-zinc-100 px-1.5 py-0.5 rounded font-medium">
+              {total - counted} Pend.
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setSoundEnabled(!soundEnabled)}
-              className="p-1.5 rounded-lg text-zinc-500 hover:bg-zinc-100 transition-colors"
-              title={soundEnabled ? 'Sonido activado' : 'Sonido desactivado'}
-            >
-              {soundEnabled ? <Volume2 className="w-4 h-4 text-zinc-700" /> : <VolumeX className="w-4 h-4 text-zinc-400" />}
-            </button>
-
-            {/* View Mode Toggle */}
-            <div className="flex bg-zinc-100 p-0.5 rounded-lg border border-zinc-200">
-              <button
-                onClick={() => setViewMode('table')}
-                className={`px-2.5 py-1 text-2xs font-bold rounded-md transition-all flex items-center gap-1 cursor-pointer ${
-                  viewMode === 'table' ? 'bg-white text-zinc-900 shadow-2xs' : 'text-zinc-500'
-                }`}
-              >
-                <Table className="w-3 h-3" />
-                <span>Tabla (HU-03)</span>
-              </button>
-              <button
-                onClick={() => setViewMode('cards')}
-                className={`px-2.5 py-1 text-2xs font-bold rounded-md transition-all flex items-center gap-1 cursor-pointer ${
-                  viewMode === 'cards' ? 'bg-white text-zinc-900 shadow-2xs' : 'text-zinc-500'
-                }`}
-              >
-                <LayoutGrid className="w-3 h-3" />
-                <span>Tarjetas</span>
-              </button>
-            </div>
-          </div>
+          <button
+            onClick={() => setSoundEnabled(!soundEnabled)}
+            className="p-1 rounded text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100 transition-colors cursor-pointer"
+            title={soundEnabled ? 'Sonido activado' : 'Sonido desactivado'}
+          >
+            {soundEnabled ? <Volume2 className="w-3.5 h-3.5 text-zinc-700" /> : <VolumeX className="w-3.5 h-3.5 text-zinc-400" />}
+          </button>
         </div>
 
-        {/* Progress Bar */}
-        <div className="space-y-1.5">
-          <div className="flex justify-between text-xs font-medium text-zinc-600">
-            <span>
-              Progreso: <strong className="text-zinc-900">{counted}</strong> de {total} ({progressPercent}%)
-            </span>
-            <span className="flex items-center gap-2 text-2xs">
-              <span className="text-amber-700 font-bold">{emptyCount} Vacías</span>
-              <span className="text-zinc-300">|</span>
-              <span className="text-blue-700 font-bold">{fullCount} Llenas</span>
-              <span className="text-zinc-300">|</span>
-              <span className="text-zinc-500">{total - counted} Pendientes</span>
-            </span>
-          </div>
-          <div className="w-full h-2 bg-zinc-100 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-emerald-500 transition-all duration-300 rounded-full"
-              style={{ width: `${progressPercent}%` }}
+        {/* Barra fina de progreso */}
+        <div className="w-full h-1 bg-zinc-100 rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-emerald-500 transition-all duration-300 rounded-full"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+
+        {/* Línea 2: Buscador rápido + Botón Desplegable de Filtros */}
+        <div className="flex items-center gap-1.5">
+          <div className="relative flex-1">
+            <Search className="w-3 h-3 text-zinc-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar código (ej. N1C01)..."
+              className="w-full text-xs pl-7 pr-6 py-1.5 bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
             />
-          </div>
-        </div>
-
-        {/* HU-03 RF: 4 COMBINABLE FILTERS (Nivel, Columna, Estantería, Posición) */}
-        <div className="mt-3 pt-3 border-t border-zinc-100 space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-700">
-              <Filter className="w-3.5 h-3.5 text-blue-600" />
-              <span>Filtros Combinables (HU-03):</span>
-            </div>
-            {hasActiveFilters && (
+            {searchQuery && (
               <button
-                onClick={resetFilters}
-                className="text-2xs font-semibold text-blue-600 hover:text-blue-800"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 p-0.5"
               >
-                Restablecer filtros
+                <X className="w-3 h-3" />
               </button>
             )}
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-            {/* 1. Nivel */}
-            <div>
-              <label className="text-3xs font-bold text-zinc-400 uppercase tracking-wider block mb-0.5">
-                Nivel (N#)
-              </label>
-              <select
-                value={filterNivel}
-                onChange={(e) => setFilterNivel(e.target.value)}
-                className="w-full text-xs font-semibold p-1.5 bg-zinc-50 border border-zinc-300 rounded-lg text-zinc-800 focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="todos">Todos los niveles</option>
-                {niveles.map(n => (
-                  <option key={n} value={n}>Nivel {n}</option>
-                ))}
-              </select>
+          <button
+            onClick={() => setIsFiltersOpen(!isFiltersOpen)}
+            className={`px-2.5 py-1.5 text-xs font-semibold rounded-lg border flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap ${
+              isFiltersOpen || activeFiltersCount > 0
+                ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-2xs'
+                : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-700 border-zinc-200'
+            }`}
+          >
+            <Filter className="w-3 h-3 text-blue-600" />
+            <span>Filtros</span>
+            {activeFiltersCount > 0 && (
+              <span className="w-3.5 h-3.5 rounded-full bg-blue-600 text-white text-3xs font-black flex items-center justify-center">
+                {activeFiltersCount}
+              </span>
+            )}
+            {isFiltersOpen ? (
+              <ChevronUp className="w-3 h-3 text-zinc-400" />
+            ) : (
+              <ChevronDown className="w-3 h-3 text-zinc-400" />
+            )}
+          </button>
+        </div>
+
+        {/* Desplegable de Filtros (solo si está abierto) */}
+        {isFiltersOpen && (
+          <div className="pt-2 border-t border-zinc-100 space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
+            <div className="flex items-center justify-between text-2xs">
+              <span className="font-bold text-zinc-700 uppercase tracking-wider">
+                Filtros de Ubicación
+              </span>
+              {hasActiveFilters && (
+                <button
+                  onClick={resetFilters}
+                  className="font-bold text-blue-600 hover:text-blue-800"
+                >
+                  Restablecer
+                </button>
+              )}
             </div>
 
-            {/* 2. Columna */}
-            <div>
-              <label className="text-3xs font-bold text-zinc-400 uppercase tracking-wider block mb-0.5">
-                Columna (C##)
-              </label>
-              <select
-                value={filterColumna}
-                onChange={(e) => setFilterColumna(e.target.value)}
-                className="w-full text-xs font-semibold p-1.5 bg-zinc-50 border border-zinc-300 rounded-lg text-zinc-800 focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="todos">Todas las columnas</option>
-                {columnas.map(c => (
-                  <option key={c} value={c}>Columna {c}</option>
-                ))}
-              </select>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+              {/* Nivel */}
+              <div>
+                <label className="text-3xs font-bold text-zinc-500 uppercase block mb-0.5">Nivel</label>
+                <select
+                  value={filterNivel}
+                  onChange={(e) => setFilterNivel(e.target.value)}
+                  className="w-full text-xs p-1.5 bg-white border border-zinc-300 rounded-md text-zinc-800"
+                >
+                  <option value="todos">Todos</option>
+                  {niveles.map(n => <option key={n} value={n}>Nivel {n}</option>)}
+                </select>
+              </div>
+
+              {/* Columna */}
+              <div>
+                <label className="text-3xs font-bold text-zinc-500 uppercase block mb-0.5">Columna</label>
+                <select
+                  value={filterColumna}
+                  onChange={(e) => setFilterColumna(e.target.value)}
+                  className="w-full text-xs p-1.5 bg-white border border-zinc-300 rounded-md text-zinc-800"
+                >
+                  <option value="todos">Todas</option>
+                  {columnas.map(c => <option key={c} value={c}>Col {c}</option>)}
+                </select>
+              </div>
+
+              {/* Estantería */}
+              <div>
+                <label className="text-3xs font-bold text-zinc-500 uppercase block mb-0.5">Estantería</label>
+                <select
+                  value={filterEstanteria}
+                  onChange={(e) => setFilterEstanteria(e.target.value)}
+                  className="w-full text-xs p-1.5 bg-white border border-zinc-300 rounded-md text-zinc-800"
+                >
+                  <option value="todos">Todas</option>
+                  {estanterias.map(e => <option key={e} value={e}>Est {e}</option>)}
+                </select>
+              </div>
+
+              {/* Posición */}
+              <div>
+                <label className="text-3xs font-bold text-zinc-500 uppercase block mb-0.5">Posición</label>
+                <select
+                  value={filterPosicion}
+                  onChange={(e) => setFilterPosicion(e.target.value)}
+                  className="w-full text-xs p-1.5 bg-white border border-zinc-300 rounded-md text-zinc-800"
+                >
+                  <option value="todos">Todas</option>
+                  {posiciones.map(p => <option key={p} value={p}>Pos {p}</option>)}
+                </select>
+              </div>
+
+              {/* Estado */}
+              <div className="col-span-2 sm:col-span-1">
+                <label className="text-3xs font-bold text-zinc-500 uppercase block mb-0.5">Estado</label>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value as any)}
+                  className="w-full text-xs p-1.5 bg-white border border-zinc-300 rounded-md text-zinc-800"
+                >
+                  <option value="todos">Todos</option>
+                  <option value="pendiente">Solo Pendientes</option>
+                  <option value="vacia">Solo Vacías</option>
+                  <option value="llena">Solo Llenas</option>
+                </select>
+              </div>
             </div>
 
-            {/* 3. Estantería */}
-            <div>
-              <label className="text-3xs font-bold text-zinc-400 uppercase tracking-wider block mb-0.5">
-                Estantería (E#)
-              </label>
-              <select
-                value={filterEstanteria}
-                onChange={(e) => setFilterEstanteria(e.target.value)}
-                className="w-full text-xs font-semibold p-1.5 bg-zinc-50 border border-zinc-300 rounded-lg text-zinc-800 focus:ring-2 focus:ring-blue-500"
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsFiltersOpen(false)}
+                className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-md shadow-2xs"
               >
-                <option value="todos">Todas las estanterías</option>
-                {estanterias.map(e => (
-                  <option key={e} value={e}>Estantería {e}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* 4. Posición */}
-            <div>
-              <label className="text-3xs font-bold text-zinc-400 uppercase tracking-wider block mb-0.5">
-                Posición (P#)
-              </label>
-              <select
-                value={filterPosicion}
-                onChange={(e) => setFilterPosicion(e.target.value)}
-                className="w-full text-xs font-semibold p-1.5 bg-zinc-50 border border-zinc-300 rounded-lg text-zinc-800 focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="todos">Todas las posiciones</option>
-                {posiciones.map(p => (
-                  <option key={p} value={p}>Posición {p}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* 5. Estado */}
-            <div className="col-span-2 sm:col-span-1">
-              <label className="text-3xs font-bold text-zinc-400 uppercase tracking-wider block mb-0.5">
-                Estado
-              </label>
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value as any)}
-                className="w-full text-xs font-semibold p-1.5 bg-zinc-50 border border-zinc-300 rounded-lg text-zinc-800 focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="todos">Todos los estados</option>
-                <option value="pendiente">Solo Pendientes</option>
-                <option value="vacia">Solo Vacías</option>
-                <option value="llena">Solo Llenas</option>
-              </select>
+                Cerrar ({filteredLocations.length})
+              </button>
             </div>
           </div>
-        </div>
+        )}
+
+        {/* Chips de filtros activos */}
+        {activeFiltersCount > 0 && !isFiltersOpen && (
+          <div className="flex items-center gap-1 flex-wrap pt-1 text-3xs">
+            <span className="text-zinc-400 font-bold uppercase">Filtros:</span>
+            {filterNivel !== 'todos' && (
+              <span className="inline-flex items-center gap-0.5 bg-blue-50 text-blue-700 px-1.5 py-0.2 rounded-full border border-blue-200">
+                N{filterNivel} <button onClick={() => setFilterNivel('todos')}>×</button>
+              </span>
+            )}
+            {filterColumna !== 'todos' && (
+              <span className="inline-flex items-center gap-0.5 bg-blue-50 text-blue-700 px-1.5 py-0.2 rounded-full border border-blue-200">
+                C{filterColumna} <button onClick={() => setFilterColumna('todos')}>×</button>
+              </span>
+            )}
+            {filterEstanteria !== 'todos' && (
+              <span className="inline-flex items-center gap-0.5 bg-blue-50 text-blue-700 px-1.5 py-0.2 rounded-full border border-blue-200">
+                E{filterEstanteria} <button onClick={() => setFilterEstanteria('todos')}>×</button>
+              </span>
+            )}
+            {filterPosicion !== 'todos' && (
+              <span className="inline-flex items-center gap-0.5 bg-blue-50 text-blue-700 px-1.5 py-0.2 rounded-full border border-blue-200">
+                P{filterPosicion} <button onClick={() => setFilterPosicion('todos')}>×</button>
+              </span>
+            )}
+            {filterStatus !== 'todos' && (
+              <span className="inline-flex items-center gap-0.5 bg-blue-50 text-blue-700 px-1.5 py-0.2 rounded-full border border-blue-200">
+                {filterStatus} <button onClick={() => setFilterStatus('todos')}>×</button>
+              </span>
+            )}
+            <button onClick={resetFilters} className="text-red-600 font-semibold underline ml-1">
+              Limpiar
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Main Table View (HU-03) */}
+      {/* 
+        TABLA DE UBICACIONES:
+        - Mantiene todas las columnas: Ubicación, N, C, E, P, Acción
+        - 100% visible en pantalla de celular SIN necesidad de scroll horizontal
+      */}
       {filteredLocations.length === 0 ? (
-        <div className="bg-white border border-zinc-200 rounded-xl p-8 text-center">
+        <div className="bg-white border border-zinc-200 rounded-xl p-6 text-center shadow-xs">
           <AlertCircle className="w-8 h-8 text-zinc-400 mx-auto mb-2" />
           <h4 className="text-sm font-bold text-zinc-900">No hay ubicaciones con los filtros seleccionados</h4>
-          <p className="text-xs text-zinc-500 mt-1 mb-4">
-            Ajusta los filtros de Nivel, Columna, Estantería o Posición para ver otras ubicaciones.
+          <p className="text-xs text-zinc-500 mt-1 mb-3">
+            Ajusta los filtros de Nivel, Columna, Estantería o Posición.
           </p>
           <button
             onClick={resetFilters}
-            className="px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 rounded-lg"
+            className="px-3 py-1.5 text-xs font-bold text-white bg-blue-600 rounded-lg shadow-xs cursor-pointer"
           >
             Quitar Filtros
           </button>
         </div>
-      ) : viewMode === 'table' ? (
-        /* HU-03: Responsive Table with per-row Vacía / Llena buttons */
-        <div className="bg-white border border-zinc-200 rounded-xl shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-zinc-600">
-              <thead className="bg-zinc-50 text-zinc-500 uppercase tracking-wider font-semibold border-b border-zinc-200">
-                <tr>
-                  <th className="py-2.5 px-4 font-bold">Código Ubicación</th>
-                  <th className="py-2.5 px-2 text-center">N</th>
-                  <th className="py-2.5 px-2 text-center">C</th>
-                  <th className="py-2.5 px-2 text-center">E</th>
-                  <th className="py-2.5 px-2 text-center">P</th>
-                  <th className="py-2.5 px-3">Estado Actual</th>
-                  <th className="py-2.5 px-4 text-right">Marcar Conteo (HU-03)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-200">
-                {filteredLocations.map((item) => {
-                  const isCounted = item.status !== 'pendiente';
-
-                  return (
-                    <tr 
-                      key={item.id} 
-                      className={`transition-colors ${
-                        item.status === 'vacia' 
-                          ? 'bg-amber-50/40 hover:bg-amber-50/70' 
-                          : item.status === 'llena' 
-                          ? 'bg-blue-50/40 hover:bg-blue-50/70' 
-                          : 'hover:bg-zinc-50/80'
-                      }`}
-                    >
-                      <td className="py-3 px-4 font-mono font-black text-sm text-zinc-900 tracking-tight">
-                        {item.code}
-                      </td>
-                      <td className="py-3 px-2 text-center font-mono text-zinc-600 font-semibold">
-                        {item.nivel}
-                      </td>
-                      <td className="py-3 px-2 text-center font-mono text-zinc-600 font-semibold">
-                        {item.columna}
-                      </td>
-                      <td className="py-3 px-2 text-center font-mono text-zinc-600 font-semibold">
-                        {item.estanteria}
-                      </td>
-                      <td className="py-3 px-2 text-center font-mono text-zinc-600 font-semibold">
-                        {item.posicion}
-                      </td>
-                      <td className="py-3 px-3">
-                        {item.status === 'llena' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-blue-100 text-blue-900 border border-blue-200">
-                            <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-                            LLENA
-                          </span>
-                        ) : item.status === 'vacia' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-amber-100 text-amber-900 border border-amber-200">
-                            <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                            VACÍA
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-semibold bg-zinc-100 text-zinc-500">
-                            Pendiente
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <div className="inline-flex items-center gap-2 justify-end">
-                          {/* Botón Vacía */}
-                          <button
-                            onClick={() => handleMark(item.id, 'vacia')}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all transform active:scale-95 cursor-pointer ${
-                              item.status === 'vacia'
-                                ? 'bg-amber-600 text-white shadow-xs'
-                                : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
-                            }`}
-                            title="Marcar como vacía"
-                          >
-                            Vacía
-                          </button>
-
-                          {/* Botón Llena */}
-                          <button
-                            onClick={() => handleMark(item.id, 'llena')}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all transform active:scale-95 cursor-pointer ${
-                              item.status === 'llena'
-                                ? 'bg-blue-600 text-white shadow-xs'
-                                : 'bg-blue-50 text-blue-800 border border-blue-200 hover:bg-blue-100'
-                            }`}
-                            title="Marcar como llena"
-                          >
-                            Llena
-                          </button>
-
-                          {/* Reset to uncounted */}
-                          {isCounted && (
-                            <button
-                              onClick={() => handleMark(item.id, 'pendiente')}
-                              className="p-1 text-zinc-400 hover:text-zinc-600 rounded"
-                              title="Restablecer a pendiente"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="p-3 bg-zinc-50 border-t border-zinc-200 flex items-center justify-between text-xs text-zinc-500 px-4">
-            <span>
-              Mostrando <strong>{filteredLocations.length}</strong> de <strong>{locations.length}</strong> ubicaciones
-            </span>
-            <span className="text-2xs text-zinc-400">
-              Guardado automático inmediato (HU-03 CA)
-            </span>
-          </div>
-        </div>
       ) : (
-        /* Tactile Card View for easy one-hand mobile operation */
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {filteredLocations.map((item) => (
-            <div 
-              key={item.id}
-              className={`p-4 bg-white border rounded-xl shadow-2xs flex flex-col justify-between gap-3 ${
-                item.status === 'vacia' ? 'border-amber-300 bg-amber-50/20' :
-                item.status === 'llena' ? 'border-blue-300 bg-blue-50/20' :
-                'border-zinc-200'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-lg font-black text-zinc-900 tracking-tight">
-                  {item.code}
-                </span>
-                <div className="flex items-center gap-1 text-2xs font-mono text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded">
-                  <span>N{item.nivel}</span>•
-                  <span>C{item.columna}</span>•
-                  <span>E{item.estanteria}</span>•
-                  <span>P{item.posicion}</span>
-                </div>
-              </div>
+        <div className="bg-white border border-zinc-200 rounded-xl shadow-xs overflow-hidden">
+          <table className="w-full text-left border-collapse table-fixed">
+            <thead className="bg-zinc-100 text-zinc-600 text-3xs sm:text-2xs uppercase tracking-wider font-bold border-b border-zinc-200">
+              <tr>
+                <th className="py-2 px-1.5 sm:px-3 w-[27%] sm:w-[22%]">Ubicación</th>
+                <th className="py-2 px-0.5 text-center w-[6%] sm:w-[7%]">N</th>
+                <th className="py-2 px-0.5 text-center w-[8%] sm:w-[8%]">C</th>
+                <th className="py-2 px-0.5 text-center w-[6%] sm:w-[7%]">E</th>
+                <th className="py-2 px-0.5 text-center w-[6%] sm:w-[7%]">P</th>
+                <th className="py-2 px-1 sm:px-3 text-right w-[47%] sm:w-[49%]">Conteo</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-200">
+              {filteredLocations.map((item, idx) => {
+                const isCounted = item.status !== 'pendiente';
 
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => handleMark(item.id, 'vacia')}
-                  className={`py-2.5 px-3 rounded-lg text-xs font-bold transition-all text-center cursor-pointer ${
-                    item.status === 'vacia'
-                      ? 'bg-amber-600 text-white shadow-xs'
-                      : 'bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100'
-                  }`}
-                >
-                  Vacía
-                </button>
-                <button
-                  onClick={() => handleMark(item.id, 'llena')}
-                  className={`py-2.5 px-3 rounded-lg text-xs font-bold transition-all text-center cursor-pointer ${
-                    item.status === 'llena'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'bg-blue-50 text-blue-900 border border-blue-200 hover:bg-blue-100'
-                  }`}
-                >
-                  Llena
-                </button>
-              </div>
-            </div>
-          ))}
+                return (
+                  <tr 
+                    key={item.id} 
+                    className={`transition-colors ${
+                      item.status === 'vacia' 
+                        ? 'bg-amber-50/70' 
+                        : item.status === 'llena' 
+                        ? 'bg-blue-50/70' 
+                        : idx % 2 === 0 ? 'bg-white' : 'bg-zinc-50/50'
+                    }`}
+                  >
+                    {/* 1. Código de Ubicación */}
+                    <td className="py-2 px-1.5 sm:px-3 font-mono font-bold text-2xs sm:text-xs text-zinc-950 truncate">
+                      {item.code}
+                    </td>
+
+                    {/* 2. Nivel */}
+                    <td className="py-2 px-0.5 text-center font-mono text-3xs sm:text-xs text-zinc-700">
+                      {item.nivel}
+                    </td>
+
+                    {/* 3. Columna */}
+                    <td className="py-2 px-0.5 text-center font-mono text-3xs sm:text-xs text-zinc-700">
+                      {item.columna}
+                    </td>
+
+                    {/* 4. Estantería */}
+                    <td className="py-2 px-0.5 text-center font-mono text-3xs sm:text-xs font-bold text-blue-700">
+                      {item.estanteria}
+                    </td>
+
+                    {/* 5. Posición */}
+                    <td className="py-2 px-0.5 text-center font-mono text-3xs sm:text-xs text-zinc-700">
+                      {item.posicion}
+                    </td>
+
+                    {/* 6. Botones de Acción (Vacía y Llena) directamente en la misma pantalla */}
+                    <td className="py-2 px-1 sm:px-3 text-right">
+                      <div className="flex items-center justify-end gap-1 sm:gap-1.5">
+                        {/* Botón Vacía */}
+                        <button
+                          onClick={() => handleMark(item.id, 'vacia')}
+                          className={`flex-1 sm:flex-initial py-1.5 px-1 sm:px-2.5 rounded-lg text-2xs sm:text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-0.5 shadow-2xs whitespace-nowrap ${
+                            item.status === 'vacia'
+                              ? 'bg-amber-600 text-white ring-1 ring-amber-500'
+                              : 'bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300'
+                          }`}
+                        >
+                          {item.status === 'vacia' && <Check className="w-3 h-3 stroke-[3]" />}
+                          <span>Vacía</span>
+                        </button>
+
+                        {/* Botón Llena */}
+                        <button
+                          onClick={() => handleMark(item.id, 'llena')}
+                          className={`flex-1 sm:flex-initial py-1.5 px-1 sm:px-2.5 rounded-lg text-2xs sm:text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-0.5 shadow-2xs whitespace-nowrap ${
+                            item.status === 'llena'
+                              ? 'bg-blue-600 text-white ring-1 ring-blue-500'
+                              : 'bg-blue-50 hover:bg-blue-100 text-blue-950 border border-blue-300'
+                          }`}
+                        >
+                          {item.status === 'llena' && <Check className="w-3 h-3 stroke-[3]" />}
+                          <span>Llena</span>
+                        </button>
+
+                        {/* Restablecer (Deshacer) */}
+                        {isCounted && (
+                          <button
+                            onClick={() => handleMark(item.id, 'pendiente')}
+                            className="p-1 text-zinc-400 hover:text-zinc-700 rounded active:scale-90"
+                            title="Restablecer a pendiente"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {/* Pie de tabla */}
+          <div className="p-2 bg-zinc-50 border-t border-zinc-200 flex items-center justify-between text-3xs text-zinc-500 px-3">
+            <span>
+              Mostrando <strong>{filteredLocations.length}</strong> de <strong>{locations.length}</strong>
+            </span>
+            <span className="text-emerald-700 font-semibold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              En vivo
+            </span>
+          </div>
         </div>
       )}
 
-      {/* Button to go to Export / Results */}
-      <div className="pt-2">
+      {/* Botón para ir a Exportar a Excel */}
+      <div className="pt-1">
         <button
           onClick={onGoToResults}
-          className="w-full py-3.5 px-4 bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-sm rounded-xl transition-colors shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+          className="w-full py-2.5 px-4 bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs rounded-xl transition-colors shadow-xs flex items-center justify-center gap-2 cursor-pointer active:scale-98"
         >
           <span>Ir a Exportar Resultados a Excel (HU-04)</span>
           <span>→</span>

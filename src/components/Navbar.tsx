@@ -145,12 +145,12 @@ export function Navbar({
         </div>
       </div>
 
-      {/* Mobile Bottom-bar Navigation */}
-      <div className="md:hidden border-t border-zinc-200 grid grid-cols-3 bg-white">
+      {/* Mobile Bottom-bar Navigation (Native App Style) */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-zinc-200 shadow-lg grid grid-cols-3">
         <button
           onClick={() => onSelectTab('cargar')}
-          className={`py-2 text-2xs font-semibold flex flex-col items-center gap-1 ${
-            activeTab === 'cargar' ? 'text-blue-600 font-bold bg-blue-50/50' : 'text-zinc-500'
+          className={`py-2.5 text-2xs font-semibold flex flex-col items-center gap-1 cursor-pointer transition-colors ${
+            activeTab === 'cargar' ? 'text-blue-600 font-bold bg-blue-50/60' : 'text-zinc-500 hover:text-zinc-800'
           }`}
         >
           <Layers className="w-4 h-4" />
@@ -159,8 +159,8 @@ export function Navbar({
 
         <button
           onClick={() => onSelectTab('contar')}
-          className={`py-2 text-2xs font-semibold flex flex-col items-center gap-1 relative ${
-            activeTab === 'contar' ? 'text-blue-600 font-bold bg-blue-50/50' : 'text-zinc-500'
+          className={`py-2.5 text-2xs font-semibold flex flex-col items-center gap-1 relative cursor-pointer transition-colors ${
+            activeTab === 'contar' ? 'text-blue-600 font-bold bg-blue-50/60' : 'text-zinc-500 hover:text-zinc-800'
           }`}
         >
           <Smartphone className="w-4 h-4" />
@@ -169,14 +169,14 @@ export function Navbar({
 
         <button
           onClick={() => onSelectTab('exportar')}
-          className={`py-2 text-2xs font-semibold flex flex-col items-center gap-1 ${
-            activeTab === 'exportar' ? 'text-blue-600 font-bold bg-blue-50/50' : 'text-zinc-500'
+          className={`py-2.5 text-2xs font-semibold flex flex-col items-center gap-1 cursor-pointer transition-colors ${
+            activeTab === 'exportar' ? 'text-blue-600 font-bold bg-blue-50/60' : 'text-zinc-500 hover:text-zinc-800'
           }`}
         >
           <BarChart3 className="w-4 h-4" />
           <span>3. Excel</span>
         </button>
-      </div>
+      </nav>
     </header>
   );
 }
