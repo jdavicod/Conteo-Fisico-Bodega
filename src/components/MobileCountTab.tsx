@@ -395,16 +395,16 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
           </button>
         </div>
       ) : (
-        <div className="bg-white border border-zinc-200 rounded-xl shadow-xs overflow-hidden">
-          <table className="w-full text-left border-collapse table-fixed">
+        <div className="bg-white border border-zinc-200 rounded-xl shadow-xs overflow-x-auto">
+          <table className="w-full text-left border-collapse table-fixed min-w-[340px]">
             <thead className="bg-zinc-100 text-zinc-600 text-3xs sm:text-2xs uppercase tracking-wider font-bold border-b border-zinc-200">
               <tr>
-                <th className="py-2 px-1.5 sm:px-3 w-[27%] sm:w-[22%]">Ubicación</th>
-                <th className="py-2 px-0.5 text-center w-[6%] sm:w-[7%]">N</th>
-                <th className="py-2 px-0.5 text-center w-[8%] sm:w-[8%]">C</th>
-                <th className="py-2 px-0.5 text-center w-[6%] sm:w-[7%]">E</th>
-                <th className="py-2 px-0.5 text-center w-[6%] sm:w-[7%]">P</th>
-                <th className="py-2 px-1 sm:px-3 text-right w-[47%] sm:w-[49%]">Conteo</th>
+                <th className="py-2 px-1.5 sm:px-3 w-[34%] sm:w-[24%]">Ubicación</th>
+                <th className="py-2 px-0.5 text-center w-[5%] sm:w-[6%]">N</th>
+                <th className="py-2 px-0.5 text-center w-[7%] sm:w-[7%]">C</th>
+                <th className="py-2 px-0.5 text-center w-[5%] sm:w-[6%]">E</th>
+                <th className="py-2 px-0.5 text-center w-[5%] sm:w-[6%]">P</th>
+                <th className="py-2 px-1 sm:px-3 text-right w-[44%] sm:w-[51%]">Conteo</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200">
@@ -422,8 +422,8 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
                         : idx % 2 === 0 ? 'bg-white' : 'bg-zinc-50/50'
                     }`}
                   >
-                    {/* 1. Código de Ubicación */}
-                    <td className="py-2 px-1.5 sm:px-3 font-mono font-bold text-2xs sm:text-xs text-zinc-950 truncate">
+                    {/* 1. Código de Ubicación COMPLETO sin cortes (ej. N1C01EBP1) */}
+                    <td className="py-2 px-1.5 sm:px-3 font-mono font-black text-xs sm:text-sm text-zinc-950 whitespace-nowrap tracking-tight">
                       {item.code}
                     </td>
 
@@ -453,7 +453,7 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
                         {/* Botón Vacía */}
                         <button
                           onClick={() => handleMark(item.id, 'vacia')}
-                          className={`flex-1 sm:flex-initial py-1.5 px-1 sm:px-2.5 rounded-lg text-2xs sm:text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-0.5 shadow-2xs whitespace-nowrap ${
+                          className={`flex-1 sm:flex-initial py-1.5 px-1.5 sm:px-2.5 rounded-lg text-2xs sm:text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-0.5 shadow-2xs whitespace-nowrap ${
                             item.status === 'vacia'
                               ? 'bg-amber-600 text-white ring-1 ring-amber-500'
                               : 'bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300'
@@ -466,7 +466,7 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
                         {/* Botón Llena */}
                         <button
                           onClick={() => handleMark(item.id, 'llena')}
-                          className={`flex-1 sm:flex-initial py-1.5 px-1 sm:px-2.5 rounded-lg text-2xs sm:text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-0.5 shadow-2xs whitespace-nowrap ${
+                          className={`flex-1 sm:flex-initial py-1.5 px-1.5 sm:px-2.5 rounded-lg text-2xs sm:text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-0.5 shadow-2xs whitespace-nowrap ${
                             item.status === 'llena'
                               ? 'bg-blue-600 text-white ring-1 ring-blue-500'
                               : 'bg-blue-50 hover:bg-blue-100 text-blue-950 border border-blue-300'
