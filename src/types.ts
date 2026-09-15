@@ -1,5 +1,7 @@
 export type LocationStatus = 'pendiente' | 'vacia' | 'llena';
 
+export const MAX_LOCATIONS_LIMIT = 500;
+
 export interface LocationItem {
   id: string;
   code: string;        // Ej: "N1C01E1P1"

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ActiveTab, LocationItem, LocationStatus } from './types';
+import { ActiveTab, LocationItem, LocationStatus, MAX_LOCATIONS_LIMIT } from './types';
 import { 
   loadLocations, 
   saveLocations, 
@@ -145,23 +145,17 @@ export default function App() {
 
   // Handle mass update / replacement of locations (from PC file upload)
   const handleUpdateLocations = (newItems: LocationItem[]) => {
-    setLocations(newItems);
-    saveLocations(newItems);
-    cloudSyncRef.current?.broadcastReplaceAll(newItems);
+    const capped = newItems.length > MAX_LOCATIONS_LIMIT ? newItems.slice(0, MAX_LOCATIONS_LIMIT) : newItems;
+    setLocations(capped);
+    saveLocations(capped);
+    cloudSyncRef.current?.broadcastReplaceAll(capped);
   };
 
   const handleForceSync = async () => {
     setSyncStatus('connecting');
-    await cloudSyncRef.current?.fetchRoomHistory();
-    cloudSyncRef.current?.sendMessage({
-      type: 'REQUEST_SYNC',
-      senderId: CLIENT_ID,
-      roomId,
-      timestamp: Date.now(),
-    });
-    // Si tenemos ubicaciones locales, también las reenviamos
+    cloudSyncRef.current?.sendRequestSync();
     if (locationsRef.current.length > 0) {
-      cloudSyncRef.current?.sendSyncResponse(locationsRef.current);
+      await cloudSyncRef.current?.broadcastReplaceAll(locationsRef.current);
     }
   };
 
@@ -173,9 +167,10 @@ export default function App() {
   const handleImportSharedString = (str: string): boolean => {
     const decoded = decodeLocationsFromShareString(str);
     if (decoded && decoded.length > 0) {
-      setLocations(decoded);
-      saveLocations(decoded);
-      cloudSyncRef.current?.broadcastReplaceAll(decoded);
+      const capped = decoded.length > MAX_LOCATIONS_LIMIT ? decoded.slice(0, MAX_LOCATIONS_LIMIT) : decoded;
+      setLocations(capped);
+      saveLocations(capped);
+      cloudSyncRef.current?.broadcastReplaceAll(capped);
       return true;
     }
     return false;

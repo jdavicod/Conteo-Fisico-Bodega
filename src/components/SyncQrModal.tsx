@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { X, Smartphone, Copy, Check, Info, Radio, RefreshCw, Sparkles, Send } from 'lucide-react';
 import { LocationItem } from '../types';
+import { sanitizeRoomId } from '../utils/cloudSync';
 
 interface Props {
   isOpen: boolean;
@@ -66,10 +67,12 @@ export function SyncQrModal({
 
   const handleSaveRoom = (e: React.FormEvent) => {
     e.preventDefault();
-    if (customRoom.trim() && onChangeRoomId) {
-      onChangeRoomId(customRoom.trim());
+    const clean = sanitizeRoomId(customRoom);
+    if (clean && onChangeRoomId) {
+      onChangeRoomId(clean);
+      setCustomRoom(clean);
       setIsEditingRoom(false);
-      setSyncFeedback(`Cambiado a sala "${customRoom.trim()}".`);
+      setSyncFeedback(`Cambiado a sala "${clean}".`);
       setTimeout(() => setSyncFeedback(null), 3000);
     }
   };
@@ -100,7 +103,7 @@ export function SyncQrModal({
         </div>
 
         <p className="text-xs text-zinc-600 mb-3 leading-relaxed">
-          Escanea este código QR con la cámara de tu celular. Soporta desde <strong>1 hasta más de 1.000 ubicaciones</strong> en tiempo real sin límites de tamaño.
+          Escanea este código QR con la cámara de tu celular. Optimizado para hasta <strong>500 ubicaciones</strong> con sincronización en tiempo real y ultraligera.
         </p>
 
         {/* QR container */}
@@ -198,9 +201,9 @@ export function SyncQrModal({
           <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-100 flex items-start gap-2 text-2xs text-blue-900">
             <Info className="w-4 h-4 shrink-0 text-blue-600 mt-0.5" />
             <div>
-              <strong>Escalable a 1.000+ ubicaciones</strong>
+              <strong>Optimizado para hasta 500 ubicaciones</strong>
               <p className="mt-0.5 text-blue-800">
-                Los datos grandes se transmiten con compresión de adjuntos de alta velocidad. Cualquier conteo hecho en el celular se actualiza en el PC instantáneamente.
+                Los datos se transmiten en micro-paquetes instantáneos. Cualquier conteo marcado en el celular se actualiza en el PC en milisegundos.
               </p>
             </div>
           </div>

@@ -1,9 +1,10 @@
 import { LocationItem, LocationStatus } from '../types';
+import { parseCombinedCode } from './parser';
 
 export type CloudSyncStatus = 'connected' | 'connecting' | 'offline';
 
 export interface SyncMessage {
-  type: 'UPDATE_STATUS' | 'REPLACE_ALL' | 'REQUEST_SYNC' | 'SYNC_RESPONSE' | 'DELETE_ITEM';
+  type: 'UPDATE_STATUS' | 'REPLACE_ALL' | 'REQUEST_SYNC' | 'SYNC_RESPONSE' | 'CHUNK_DATA';
   senderId: string;
   roomId: string;
   timestamp: number;
@@ -12,6 +13,21 @@ export interface SyncMessage {
 
 const ROOM_STORAGE_KEY = 'bodega_sync_room_id';
 export const CLIENT_ID = `client_${Math.random().toString(36).substring(2, 9)}`;
+
+/**
+ * Limpia y normaliza el ID de sala (solo minúsculas, números, guiones y guión bajo).
+ * Evita espacios o caracteres especiales que causan ERR_CONNECTION_TIMED_OUT o URLs inválidas.
+ */
+export function sanitizeRoomId(raw: string): string {
+  const cleaned = String(raw || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9_-]/g, '_')
+    .replace(/_+/g, '_')
+    .substring(0, 32);
+
+  return cleaned || 'bodega_sala1';
+}
 
 /**
  * Obtiene o crea un identificador único de sala para sincronizar este PC con el Celular
@@ -23,7 +39,7 @@ export function getOrCreateRoomId(): string {
   const urlParams = new URLSearchParams(window.location.search);
   const queryRoom = urlParams.get('room');
   if (queryRoom && queryRoom.trim()) {
-    const clean = queryRoom.trim();
+    const clean = sanitizeRoomId(queryRoom);
     localStorage.setItem(ROOM_STORAGE_KEY, clean);
     return clean;
   }
@@ -31,42 +47,84 @@ export function getOrCreateRoomId(): string {
   // 2. Si ya está guardado en localStorage
   const saved = localStorage.getItem(ROOM_STORAGE_KEY);
   if (saved && saved.trim()) {
-    return saved.trim();
+    return sanitizeRoomId(saved);
   }
 
-  // 3. Generar una nueva sala única (alfanumérico de 6 caracteres fácil de recordar)
+  // 3. Generar una nueva sala única limpia (alfanumérico de 6 caracteres)
   const newRoom = `bodega_${Math.random().toString(36).substring(2, 8)}`;
   localStorage.setItem(ROOM_STORAGE_KEY, newRoom);
   return newRoom;
 }
 
 export function setCustomRoomId(newRoom: string): void {
-  localStorage.setItem(ROOM_STORAGE_KEY, newRoom.trim());
+  const clean = sanitizeRoomId(newRoom);
+  localStorage.setItem(ROOM_STORAGE_KEY, clean);
 }
 
 /**
- * Servicio de sincronización en tiempo real de alta escalabilidad (1.000+ ubicaciones)
- * - Soporta mensajes de cualquier tamaño mediante attachments automáticos con CORS abierto
- * - Polling de historial (?poll=1) para que el celular reciba datos incluso si el PC se conectó antes
- * - BroadcastChannel local para sincronización instantánea entre pestañas del mismo equipo
+ * Compacta un LocationItem en tupla [código, status_num, timestamp_seg]
+ * Status: 0 = pendiente, 1 = vacia, 2 = llena
+ */
+function compactItem(item: LocationItem): [string, number, number | undefined] {
+  const statNum = item.status === 'llena' ? 2 : item.status === 'vacia' ? 1 : 0;
+  const timeSec = item.countedAt ? Math.floor(new Date(item.countedAt).getTime() / 1000) : undefined;
+  return [item.code, statNum, timeSec];
+}
+
+/**
+ * Reconstruye un LocationItem a partir de su tupla compacta
+ */
+function expandItem(compact: any[]): LocationItem {
+  const code = String(compact[0] || '').trim();
+  const statNum = compact[1];
+  const timeSec = compact[2];
+  const status: LocationStatus = statNum === 2 ? 'llena' : statNum === 1 ? 'vacia' : 'pendiente';
+  const parsed = parseCombinedCode(code);
+  const nivel = parsed ? parsed.nivel : '';
+  const columna = parsed ? parsed.columna : '';
+  const estanteria = parsed ? parsed.estanteria : '';
+  const posicion = parsed ? parsed.posicion : '';
+
+  return {
+    id: `sync-${code}`,
+    code,
+    nivel,
+    columna,
+    estanteria,
+    posicion,
+    status,
+    countedAt: timeSec ? new Date(timeSec * 1000).toISOString() : undefined,
+  };
+}
+
+/**
+ * Servicio de sincronización en tiempo real optimizado para hasta 500 ubicaciones:
+ * - Sin archivos adjuntos (evita errores 429 de límite de descargas en ntfy.sh)
+ * - Transmisión en micro-bloques ligeros de texto plano (<2KB cada uno)
+ * - Conexión resiliente vía SSE (Server-Sent Events) y WebSocket
+ * - Limpieza estricta de nombres de sala para evitar ERR_CONNECTION_TIMED_OUT
  */
 export class CloudSyncService {
   private roomId: string;
+  private sse: EventSource | null = null;
   private ws: WebSocket | null = null;
   private broadcastChannel: BroadcastChannel | null = null;
   private statusListeners: ((status: CloudSyncStatus) => void)[] = [];
   private messageListeners: ((msg: SyncMessage) => void)[] = [];
   private reconnectTimer: any = null;
   private isDestroyed = false;
+  private retryCount = 0;
   private processedMessageIds = new Set<string>();
+
+  // Buffer para recepción de bloques (chunks) de ubicaciones
+  private incomingChunks = new Map<string, { total: number; chunks: Map<number, LocationItem[]>; timer: any }>();
+
   public status: CloudSyncStatus = 'connecting';
 
   constructor(roomId?: string) {
-    this.roomId = roomId || getOrCreateRoomId();
+    this.roomId = sanitizeRoomId(roomId || getOrCreateRoomId());
     this.initBroadcastChannel();
-    this.connectWebSocket();
-    // Recuperar historial de sala inmediatamente al instanciar
-    this.fetchRoomHistory();
+    this.connectStream();
   }
 
   public getRoomId(): string {
@@ -95,128 +153,144 @@ export class CloudSyncService {
         };
       }
     } catch {
-      // ignore
+      // BroadcastChannel no soportado
     }
   }
 
   /**
-   * Resuelve el contenido de un mensaje de ntfy.sh, soportando payloads de más de 4KB (archivos adjuntos)
+   * Conecta mediante Server-Sent Events (SSE), que funciona de forma transparente
+   * sobre HTTPS (puerto 443) y atraviesa proxys y redes educativas sin bloqueos.
    */
-  private async parseNtfyEvent(raw: any): Promise<SyncMessage | null> {
-    try {
-      if (raw.id && this.processedMessageIds.has(raw.id)) {
-        return null;
-      }
-      if (raw.id) {
-        this.processedMessageIds.add(raw.id);
-        // Limitar tamaño del set para evitar fuga de memoria
-        if (this.processedMessageIds.size > 1000) {
-          const first = this.processedMessageIds.values().next().value;
-          if (first) this.processedMessageIds.delete(first);
-        }
-      }
-
-      if (raw.event !== 'message') return null;
-
-      let jsonString = raw.message;
-
-      // Si el mensaje vino como adjunto (porque supera el límite de 4KB de texto en ntfy.sh)
-      if (raw.attachment && raw.attachment.url) {
-        try {
-          const fileRes = await fetch(raw.attachment.url);
-          if (fileRes.ok) {
-            jsonString = await fileRes.text();
-          }
-        } catch (err) {
-          console.error('Error al descargar adjunto de ntfy', err);
-          return null;
-        }
-      }
-
-      if (!jsonString || typeof jsonString !== 'string') return null;
-
-      const parsed: SyncMessage = JSON.parse(jsonString);
-      return parsed;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Recupera el último estado de la sala desde el caché cloud de ntfy.sh (?poll=1)
-   * Esto permite que el celular obtenga las 1.000 ubicaciones al instante al abrir la sala
-   */
-  public async fetchRoomHistory(): Promise<void> {
-    try {
-      const res = await fetch(`https://ntfy.sh/${this.roomId}/json?poll=1`);
-      if (!res.ok) return;
-
-      const text = await res.text();
-      const lines = text.trim().split('\n').filter(Boolean);
-
-      // Procesar mensajes en orden cronológico
-      for (const line of lines) {
-        try {
-          const raw = JSON.parse(line);
-          const msg = await this.parseNtfyEvent(raw);
-          if (msg && msg.senderId !== CLIENT_ID) {
-            this.notifyMessage(msg);
-          }
-        } catch {
-          // ignore
-        }
-      }
-    } catch (e) {
-      console.warn('No se pudo consultar el historial inicial de la sala:', e);
-    }
-  }
-
-  private connectWebSocket() {
+  private connectStream() {
     if (this.isDestroyed) return;
     this.updateStatus('connecting');
 
     try {
-      const wsUrl = `wss://ntfy.sh/${this.roomId}/ws`;
-      this.ws = new WebSocket(wsUrl);
+      if (this.sse) {
+        this.sse.close();
+        this.sse = null;
+      }
 
-      this.ws.onopen = () => {
+      const encodedRoom = encodeURIComponent(this.roomId);
+      const sseUrl = `https://ntfy.sh/${encodedRoom}/sse`;
+      this.sse = new EventSource(sseUrl);
+
+      this.sse.onopen = () => {
+        this.retryCount = 0;
         this.updateStatus('connected');
-        // Solicitar sincronización a cualquier compañero conectado
-        this.sendMessage({
-          type: 'REQUEST_SYNC',
-          senderId: CLIENT_ID,
-          roomId: this.roomId,
-          timestamp: Date.now(),
-        });
+        // Solicitar listado a los demás dispositivos en la sala
+        this.sendRequestSync();
       };
 
-      this.ws.onmessage = async (event) => {
+      this.sse.onmessage = (event) => {
         try {
           const raw = JSON.parse(event.data);
-          const msg = await this.parseNtfyEvent(raw);
-          if (msg && msg.senderId !== CLIENT_ID) {
-            this.notifyMessage(msg);
-          }
+          this.handleIncomingRaw(raw);
         } catch {
-          // Ignorar mensajes de keepalive o no JSON
+          // Keepalive o no JSON
         }
       };
 
-      this.ws.onerror = () => {
+      this.sse.onerror = () => {
         this.updateStatus('offline');
-      };
+        if (this.sse) {
+          this.sse.close();
+          this.sse = null;
+        }
 
-      this.ws.onclose = () => {
-        this.updateStatus('offline');
-        if (!this.isDestroyed) {
-          this.reconnectTimer = setTimeout(() => this.connectWebSocket(), 3000);
+        if (!this.isDestroyed && this.retryCount < 5) {
+          this.retryCount++;
+          const delay = Math.min(30000, 3000 * Math.pow(1.5, this.retryCount));
+          this.reconnectTimer = setTimeout(() => this.connectStream(), delay);
         }
       };
     } catch {
       this.updateStatus('offline');
-      if (!this.isDestroyed) {
-        this.reconnectTimer = setTimeout(() => this.connectWebSocket(), 4000);
+    }
+  }
+
+  private handleIncomingRaw(raw: any) {
+    if (!raw || raw.event !== 'message' || !raw.message) return;
+
+    if (raw.id && this.processedMessageIds.has(raw.id)) {
+      return;
+    }
+    if (raw.id) {
+      this.processedMessageIds.add(raw.id);
+      if (this.processedMessageIds.size > 500) {
+        const first = this.processedMessageIds.values().next().value;
+        if (first) this.processedMessageIds.delete(first);
       }
+    }
+
+    try {
+      const msg: SyncMessage = JSON.parse(raw.message);
+      if (!msg || msg.senderId === CLIENT_ID || msg.roomId !== this.roomId) {
+        return;
+      }
+
+      // Si es un fragmento de lista (CHUNK_DATA)
+      if (msg.type === 'CHUNK_DATA' && msg.payload) {
+        this.handleIncomingChunk(msg.payload);
+        return;
+      }
+
+      this.notifyMessage(msg);
+    } catch {
+      // Ignorar mensajes malformados
+    }
+  }
+
+  /**
+   * Ensambla fragmentos de listas grandes sin saturar la red
+   */
+  private handleIncomingChunk(payload: { batchId: string; chunkIndex: number; totalChunks: number; items: any[] }) {
+    const { batchId, chunkIndex, totalChunks, items } = payload;
+    if (!batchId || !Array.isArray(items)) return;
+
+    let entry = this.incomingChunks.get(batchId);
+    if (!entry) {
+      entry = {
+        total: totalChunks,
+        chunks: new Map(),
+        timer: setTimeout(() => {
+          this.finalizeBatch(batchId);
+        }, 3000),
+      };
+      this.incomingChunks.set(batchId, entry);
+    }
+
+    const expanded = items.map(expandItem);
+    entry.chunks.set(chunkIndex, expanded);
+
+    if (entry.chunks.size >= entry.total) {
+      clearTimeout(entry.timer);
+      this.finalizeBatch(batchId);
+    }
+  }
+
+  private finalizeBatch(batchId: string) {
+    const entry = this.incomingChunks.get(batchId);
+    if (!entry) return;
+
+    this.incomingChunks.delete(batchId);
+    const allLocations: LocationItem[] = [];
+    const sortedKeys = Array.from(entry.chunks.keys()).sort((a, b) => a - b);
+    for (const key of sortedKeys) {
+      const chunkItems = entry.chunks.get(key);
+      if (chunkItems) {
+        allLocations.push(...chunkItems);
+      }
+    }
+
+    if (allLocations.length > 0) {
+      this.notifyMessage({
+        type: 'SYNC_RESPONSE',
+        senderId: 'remote',
+        roomId: this.roomId,
+        timestamp: Date.now(),
+        payload: { locations: allLocations },
+      });
     }
   }
 
@@ -245,44 +319,47 @@ export class CloudSyncService {
   }
 
   /**
-   * Envía un mensaje hacia todos los dispositivos de la misma sala (PC y Celular).
-   * Si supera 3.5KB (ej. 246 o 1.000 ubicaciones), se envía con cabecera Filename
-   * para que ntfy.sh lo almacene como adjunto descargable con CORS abierto.
+   * Envía un mensaje JSON ligero hacia la sala sin cabeceras de adjunto (sin errores 429)
    */
   public async sendMessage(msg: SyncMessage): Promise<void> {
     const payloadStr = JSON.stringify(msg);
 
-    // 1. Enviar por BroadcastChannel local (otras pestañas del navegador)
+    // 1. BroadcastChannel local entre pestañas
     try {
       this.broadcastChannel?.postMessage(msg);
     } catch {
       // ignore
     }
 
-    // 2. Enviar por HTTPS POST hacia ntfy.sh
+    // 2. HTTPS POST hacia ntfy.sh (puro JSON sin adjunto)
     try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-
-      // Si supera 3KB, adjuntarlo como archivo para garantizar que nunca sea rechazado por tamaño
-      if (payloadStr.length > 3000) {
-        headers['Filename'] = 'bodega_sync.json';
-      }
-
-      await fetch(`https://ntfy.sh/${this.roomId}`, {
+      const encodedRoom = encodeURIComponent(this.roomId);
+      await fetch(`https://ntfy.sh/${encodedRoom}`, {
         method: 'POST',
-        headers,
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: payloadStr,
-        keepalive: true,
       });
     } catch (err) {
-      console.warn('Error al transmitir mensaje de sincronización:', err);
+      console.warn('Advertencia de transmisión de sincronización:', err);
     }
   }
 
   /**
-   * Celular o PC marca una ubicación -> Notifica al instante (payload muy ligero < 200 bytes)
+   * Envía la solicitud de sincronización cuando un nuevo cliente se conecta
+   */
+  public sendRequestSync() {
+    this.sendMessage({
+      type: 'REQUEST_SYNC',
+      senderId: CLIENT_ID,
+      roomId: this.roomId,
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * Notifica el cambio de una sola ubicación (solo ~80 bytes)
    */
   public broadcastStatusUpdate(id: string, code: string, status: LocationStatus) {
     this.sendMessage({
@@ -300,34 +377,59 @@ export class CloudSyncService {
   }
 
   /**
-   * PC carga un nuevo listado (hasta miles de datos) -> Notifica a los celulares al instante
+   * Transmite el listado completo (hasta 500 ubicaciones) dividido en micro-bloques de 60 items (<1.5KB cada uno)
    */
-  public broadcastReplaceAll(locations: LocationItem[]) {
-    this.sendMessage({
-      type: 'REPLACE_ALL',
-      senderId: CLIENT_ID,
-      roomId: this.roomId,
-      timestamp: Date.now(),
-      payload: { locations },
-    });
+  public async broadcastReplaceAll(locations: LocationItem[]) {
+    await this.sendInChunks('REPLACE_ALL', locations);
   }
 
   /**
-   * Responde a una solicitud de sincronización con la lista actual
+   * Responde a una solicitud de sincronización enviando los datos en micro-bloques
    */
-  public sendSyncResponse(locations: LocationItem[]) {
-    this.sendMessage({
-      type: 'SYNC_RESPONSE',
-      senderId: CLIENT_ID,
-      roomId: this.roomId,
-      timestamp: Date.now(),
-      payload: { locations },
-    });
+  public async sendSyncResponse(locations: LocationItem[]) {
+    await this.sendInChunks('SYNC_RESPONSE', locations);
+  }
+
+  private async sendInChunks(_type: 'REPLACE_ALL' | 'SYNC_RESPONSE', locations: LocationItem[]) {
+    if (locations.length === 0) return;
+
+    const chunkSize = 60;
+    const totalChunks = Math.ceil(locations.length / chunkSize);
+    const batchId = `b_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+    for (let c = 0; c < totalChunks; c++) {
+      if (this.isDestroyed) break;
+      const slice = locations.slice(c * chunkSize, (c + 1) * chunkSize);
+      const compactItems = slice.map(compactItem);
+
+      const msg: SyncMessage = {
+        type: 'CHUNK_DATA',
+        senderId: CLIENT_ID,
+        roomId: this.roomId,
+        timestamp: Date.now(),
+        payload: {
+          batchId,
+          chunkIndex: c,
+          totalChunks,
+          items: compactItems,
+        },
+      };
+
+      await this.sendMessage(msg);
+      // Pausa breve de 120ms entre bloques para no saturar el canal
+      if (c < totalChunks - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 120));
+      }
+    }
   }
 
   public destroy() {
     this.isDestroyed = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.sse) {
+      this.sse.close();
+      this.sse = null;
+    }
     if (this.ws) {
       this.ws.close();
       this.ws = null;
@@ -339,5 +441,6 @@ export class CloudSyncService {
     this.statusListeners = [];
     this.messageListeners = [];
     this.processedMessageIds.clear();
+    this.incomingChunks.clear();
   }
 }

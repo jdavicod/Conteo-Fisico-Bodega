@@ -18,7 +18,7 @@ import {
   FileCheck2,
   FileWarning
 } from 'lucide-react';
-import { LocationItem, ParseError } from '../types';
+import { LocationItem, ParseError, MAX_LOCATIONS_LIMIT } from '../types';
 import { parseFileContents, parsePastedLines, formatCode } from '../utils/parser';
 import { downloadTemplate4Columns, downloadTemplate1Column } from '../utils/excel';
 
@@ -209,6 +209,12 @@ export function UploadManageTab({ locations, onUpdateLocations, onGoToCount, onO
   const handleAddManual = (e: React.FormEvent) => {
     e.preventDefault();
     setAddError(null);
+
+    if (locations.length >= MAX_LOCATIONS_LIMIT) {
+      setAddError(`Se ha alcanzado el límite máximo optimizado de ${MAX_LOCATIONS_LIMIT} ubicaciones.`);
+      return;
+    }
+
     const code = formatCode(newNivel, newColumna, newEstanteria, newPosicion);
 
     if (locations.some(l => l.code === code)) {
@@ -418,20 +424,6 @@ export function UploadManageTab({ locations, onUpdateLocations, onGoToCount, onO
             <button
               onClick={() => {
                 import('../utils/storage').then(mod => {
-                  const items = mod.generate1000SampleLocations();
-                  onUpdateLocations(items);
-                  setSuccessMsg('⚡ Se generaron y sincronizaron 1.000 ubicaciones exactas (Niveles 1-5, Columnas 01-20, Estanterías A-E, Posiciones 1-2).');
-                  setParseErrors([]);
-                });
-              }}
-              className="w-full py-2 px-3 text-xs font-bold bg-amber-500 hover:bg-amber-400 text-zinc-950 rounded-lg transition-colors text-center cursor-pointer shadow-xs flex items-center justify-center gap-1.5"
-            >
-              <span>⚡ Probar con 1.000 Ubicaciones (Escalabilidad)</span>
-            </button>
-
-            <button
-              onClick={() => {
-                import('../utils/storage').then(mod => {
                   onUpdateLocations(mod.SAMPLE_LOCATIONS);
                   setSuccessMsg('Se cargaron las 12 ubicaciones de muestra en formato N#C##E(letra)P#.');
                   setParseErrors([]);
@@ -439,7 +431,7 @@ export function UploadManageTab({ locations, onUpdateLocations, onGoToCount, onO
               }}
               className="w-full py-2 px-3 text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-lg transition-colors text-center cursor-pointer"
             >
-              Cargar Muestra Pequeña (12 ubicaciones)
+              Cargar Muestra Inicial (12 ubicaciones)
             </button>
 
             {locations.length > 0 && (

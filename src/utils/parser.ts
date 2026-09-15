@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { LocationItem, LocationStatus, ParseError } from '../types';
+import { LocationItem, LocationStatus, ParseError, MAX_LOCATIONS_LIMIT } from '../types';
 
 // Regex que valida y extrae N#C##E(letra)P#
 // Admite variaciones de mayúsculas/minúsculas y separadores opcionales (guion, espacio, punto)
@@ -132,6 +132,15 @@ function processRawMatrix(rows: any[][]): ParseResult {
     is4Columns ? '4_columnas' : '1_columna_combinada';
 
   for (let r = startIndex; r < rows.length; r++) {
+    if (validLocations.length >= MAX_LOCATIONS_LIMIT) {
+      errors.push({
+        row: r + 1,
+        value: `Límite alcanzado (${validLocations.length} ubicaciones)`,
+        reason: `Se importaron las primeras ${MAX_LOCATIONS_LIMIT} ubicaciones para optimizar recursos y máxima estabilidad.`,
+      });
+      break;
+    }
+
     const row = rows[r];
     if (!row || !Array.isArray(row) || row.length === 0) continue;
 
