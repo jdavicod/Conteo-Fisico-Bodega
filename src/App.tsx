@@ -248,6 +248,7 @@ export default function App() {
         onImportSharedString={handleImportSharedString}
         onChangeRoomId={handleChangeRoomId}
         onForceSync={handleForceSync}
+        syncStatus={syncStatus}
       />
     </div>
   );

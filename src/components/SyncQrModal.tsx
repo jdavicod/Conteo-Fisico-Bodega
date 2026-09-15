@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { X, Smartphone, Copy, Check, Info, Radio, RefreshCw, Sparkles, Send } from 'lucide-react';
+import { X, Smartphone, Copy, Check, Info, Radio, RefreshCw, Sparkles, Send, Wifi, WifiOff } from 'lucide-react';
 import { LocationItem } from '../types';
-import { sanitizeRoomId } from '../utils/cloudSync';
+import { sanitizeRoomId, CloudSyncStatus } from '../utils/cloudSync';
 
 interface Props {
   isOpen: boolean;
@@ -12,6 +12,7 @@ interface Props {
   onImportSharedString: (str: string) => boolean;
   onChangeRoomId?: (newRoom: string) => void;
   onForceSync?: () => Promise<void> | void;
+  syncStatus?: CloudSyncStatus;
 }
 
 export function SyncQrModal({ 
@@ -20,7 +21,8 @@ export function SyncQrModal({
   locations, 
   roomId, 
   onChangeRoomId,
-  onForceSync 
+  onForceSync,
+  syncStatus = 'connected'
 }: Props) {
   const [copied, setCopied] = useState(false);
   const [customRoom, setCustomRoom] = useState(roomId);
@@ -95,10 +97,28 @@ export function SyncQrModal({
             <h3 className="text-base font-bold text-zinc-900">
               Sincronización PC ↔ Celular en Vivo
             </h3>
-            <span className="inline-flex items-center gap-1 text-2xs text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full">
-              <Radio className="w-2.5 h-2.5 text-emerald-600 animate-pulse" />
-              Sala Activa: {roomId}
-            </span>
+            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+              <span className="inline-flex items-center gap-1 text-2xs text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                <Radio className="w-2.5 h-2.5 text-emerald-600 animate-pulse" />
+                Sala: {roomId}
+              </span>
+              {syncStatus === 'connected' ? (
+                <span className="inline-flex items-center gap-1 text-2xs text-emerald-800 font-medium bg-emerald-100/60 px-2 py-0.5 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Canal WebSocket Activo (TLS)
+                </span>
+              ) : syncStatus === 'connecting' ? (
+                <span className="inline-flex items-center gap-1 text-2xs text-blue-700 font-medium bg-blue-50 px-2 py-0.5 rounded-full">
+                  <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                  Conectando al servidor...
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-2xs text-amber-700 font-medium bg-amber-50 px-2 py-0.5 rounded-full">
+                  <WifiOff className="w-2.5 h-2.5" />
+                  Modo Local
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
