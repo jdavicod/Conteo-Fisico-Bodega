@@ -45,6 +45,37 @@ export function clearLocations(): void {
   localStorage.removeItem(STORAGE_KEY);
 }
 
+/**
+ * Genera 1.000 ubicaciones válidas exactas para pruebas de carga y escalabilidad PC ↔ Celular
+ * Distribución: Niveles 1-5, Columnas 01-20, Estanterías A-E, Posiciones 1-2 (5 * 20 * 5 * 2 = 1.000)
+ */
+export function generate1000SampleLocations(): LocationItem[] {
+  const items: LocationItem[] = [];
+  const estanterias = ['A', 'B', 'C', 'D', 'E'];
+  let count = 0;
+  for (let n = 1; n <= 5; n++) {
+    for (let c = 1; c <= 20; c++) {
+      const colStr = c < 10 ? `0${c}` : `${c}`;
+      for (const e of estanterias) {
+        for (let p = 1; p <= 2; p++) {
+          count++;
+          const code = `N${n}C${colStr}E${e}P${p}`;
+          items.push({
+            id: `loc-gen-${count}`,
+            code,
+            nivel: `${n}`,
+            columna: colStr,
+            estanteria: e,
+            posicion: `${p}`,
+            status: 'pendiente',
+          });
+        }
+      }
+    }
+  }
+  return items;
+}
+
 // Empaquetado compacto para pasar entre PC y móvil vía QR sin backend
 export function encodeLocationsToShareString(items: LocationItem[]): string {
   try {

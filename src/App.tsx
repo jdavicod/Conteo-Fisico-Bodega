@@ -9,7 +9,8 @@ import {
   CloudSyncService, 
   CloudSyncStatus, 
   getOrCreateRoomId, 
-  setCustomRoomId 
+  setCustomRoomId,
+  CLIENT_ID
 } from './utils/cloudSync';
 import { Navbar } from './components/Navbar';
 import { UploadManageTab } from './components/UploadManageTab';
@@ -60,27 +61,54 @@ export default function App() {
 
     const unsubMessage = service.onMessage((msg) => {
       if (msg.type === 'UPDATE_STATUS' && msg.payload) {
-        const { id, status, countedAt } = msg.payload;
+        const { id, code, status, countedAt } = msg.payload;
         setLocations((prev) => {
-          const next = prev.map((item) =>
-            item.id === id ? { ...item, status, countedAt } : item
-          );
+          const next = prev.map((item) => {
+            if (item.id === id || (code && item.code === code)) {
+              return { ...item, status, countedAt };
+            }
+            return item;
+          });
           saveLocations(next);
           return next;
         });
-      } else if (msg.type === 'REPLACE_ALL' && msg.payload?.locations) {
-        setLocations(msg.payload.locations);
-        saveLocations(msg.payload.locations);
+      } else if ((msg.type === 'REPLACE_ALL' || msg.type === 'SYNC_RESPONSE') && msg.payload?.locations) {
+        const incoming = msg.payload.locations as LocationItem[];
+        if (Array.isArray(incoming) && incoming.length > 0) {
+          setLocations((prev) => {
+            // Fusión inteligente: Si el celular o PC ya contó algunas ubicaciones,
+            // no borramos su progreso sino que conservamos su estado 'vacia'/'llena'
+            const prevMap = new Map<string, LocationItem>();
+            prev.forEach(p => {
+              prevMap.set(p.code, p);
+              prevMap.set(p.id, p);
+            });
+
+            const merged = incoming.map((inc) => {
+              const existing = prevMap.get(inc.code) || prevMap.get(inc.id);
+              if (existing) {
+                // Si el dispositivo local ya lo había marcado como vacia o llena, y el remoto viene pendiente, conservamos el conteo
+                if (existing.status !== 'pendiente' && inc.status === 'pendiente') {
+                  return { ...inc, status: existing.status, countedAt: existing.countedAt };
+                }
+                // Si ambos tienen conteo, tomar el más reciente
+                if (existing.status !== 'pendiente' && inc.status !== 'pendiente') {
+                  if (existing.countedAt && inc.countedAt && existing.countedAt > inc.countedAt) {
+                    return { ...inc, status: existing.status, countedAt: existing.countedAt };
+                  }
+                }
+              }
+              return inc;
+            });
+
+            saveLocations(merged);
+            return merged;
+          });
+        }
       } else if (msg.type === 'REQUEST_SYNC') {
-        // Un nuevo dispositivo (ej. celular) entró a la sala; le compartimos el listado actual
+        // Un nuevo dispositivo (ej. celular) entró a la sala; le compartimos el listado completo actual
         if (locationsRef.current.length > 0) {
           service.sendSyncResponse(locationsRef.current);
-        }
-      } else if (msg.type === 'SYNC_RESPONSE' && msg.payload?.locations) {
-        // Si nuestro listado local estaba vacío o desactualizado, adoptamos el del compañero
-        if (locationsRef.current.length === 0 || locationsRef.current.every(l => l.status === 'pendiente')) {
-          setLocations(msg.payload.locations);
-          saveLocations(msg.payload.locations);
         }
       }
     });
@@ -96,18 +124,23 @@ export default function App() {
   // Handle status update (HU-03: guarda de inmediato y propaga al PC en vivo)
   const handleUpdateStatus = (id: string, status: LocationStatus) => {
     const countedAt = status !== 'pendiente' ? new Date().toISOString() : undefined;
+    let targetCode = '';
 
     // 1. Optimistic local update (instantáneo en la pantalla del celular)
     setLocations((prev) => {
-      const next = prev.map((item) =>
-        item.id === id ? { ...item, status, countedAt } : item
-      );
+      const next = prev.map((item) => {
+        if (item.id === id) {
+          targetCode = item.code;
+          return { ...item, status, countedAt };
+        }
+        return item;
+      });
       saveLocations(next);
       return next;
     });
 
-    // 2. Broadcast en vivo al PC
-    cloudSyncRef.current?.broadcastStatusUpdate(id, status);
+    // 2. Broadcast en vivo al PC (incluye código para concordancia exacta)
+    cloudSyncRef.current?.broadcastStatusUpdate(id, targetCode, status);
   };
 
   // Handle mass update / replacement of locations (from PC file upload)
@@ -115,6 +148,21 @@ export default function App() {
     setLocations(newItems);
     saveLocations(newItems);
     cloudSyncRef.current?.broadcastReplaceAll(newItems);
+  };
+
+  const handleForceSync = async () => {
+    setSyncStatus('connecting');
+    await cloudSyncRef.current?.fetchRoomHistory();
+    cloudSyncRef.current?.sendMessage({
+      type: 'REQUEST_SYNC',
+      senderId: CLIENT_ID,
+      roomId,
+      timestamp: Date.now(),
+    });
+    // Si tenemos ubicaciones locales, también las reenviamos
+    if (locationsRef.current.length > 0) {
+      cloudSyncRef.current?.sendSyncResponse(locationsRef.current);
+    }
   };
 
   const handleChangeRoomId = (newRoom: string) => {
@@ -143,6 +191,7 @@ export default function App() {
         onOpenSync={() => setIsSyncModalOpen(true)}
         syncStatus={syncStatus}
         roomId={roomId}
+        onForceSync={handleForceSync}
       />
 
       {/* Main Workspace Body */}
@@ -203,6 +252,7 @@ export default function App() {
         roomId={roomId}
         onImportSharedString={handleImportSharedString}
         onChangeRoomId={handleChangeRoomId}
+        onForceSync={handleForceSync}
       />
     </div>
   );

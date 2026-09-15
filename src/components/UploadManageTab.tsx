@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { 
   UploadCloud, 
   Download, 
@@ -231,6 +231,10 @@ export function UploadManageTab({ locations, onUpdateLocations, onGoToCount, onO
     setSuccessMsg(`Ubicación "${code}" agregada con éxito.`);
   };
 
+  // Pagination for high scalability (1.000+ items)
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(50);
+
   const filteredLocations = locations.filter(l => 
     l.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
     `n${l.nivel}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -238,6 +242,16 @@ export function UploadManageTab({ locations, onUpdateLocations, onGoToCount, onO
     `e${l.estanteria}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
     `p${l.posicion}`.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const totalPages = Math.max(1, Math.ceil(filteredLocations.length / (pageSize > 0 ? pageSize : 1)));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedLocations = useMemo(() => {
+    if (pageSize <= 0 || pageSize >= filteredLocations.length) {
+      return filteredLocations;
+    }
+    const start = (safePage - 1) * pageSize;
+    return filteredLocations.slice(start, start + pageSize);
+  }, [filteredLocations, safePage, pageSize]);
 
   return (
     <div className="space-y-6" id="epic-1-workarea">
@@ -404,6 +418,20 @@ export function UploadManageTab({ locations, onUpdateLocations, onGoToCount, onO
             <button
               onClick={() => {
                 import('../utils/storage').then(mod => {
+                  const items = mod.generate1000SampleLocations();
+                  onUpdateLocations(items);
+                  setSuccessMsg('⚡ Se generaron y sincronizaron 1.000 ubicaciones exactas (Niveles 1-5, Columnas 01-20, Estanterías A-E, Posiciones 1-2).');
+                  setParseErrors([]);
+                });
+              }}
+              className="w-full py-2 px-3 text-xs font-bold bg-amber-500 hover:bg-amber-400 text-zinc-950 rounded-lg transition-colors text-center cursor-pointer shadow-xs flex items-center justify-center gap-1.5"
+            >
+              <span>⚡ Probar con 1.000 Ubicaciones (Escalabilidad)</span>
+            </button>
+
+            <button
+              onClick={() => {
+                import('../utils/storage').then(mod => {
                   onUpdateLocations(mod.SAMPLE_LOCATIONS);
                   setSuccessMsg('Se cargaron las 12 ubicaciones de muestra en formato N#C##E(letra)P#.');
                   setParseErrors([]);
@@ -411,7 +439,7 @@ export function UploadManageTab({ locations, onUpdateLocations, onGoToCount, onO
               }}
               className="w-full py-2 px-3 text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-lg transition-colors text-center cursor-pointer"
             >
-              Cargar Muestra N#C##E(letra)P#
+              Cargar Muestra Pequeña (12 ubicaciones)
             </button>
 
             {locations.length > 0 && (
@@ -637,7 +665,7 @@ o también 4 columnas:
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-200">
-                {filteredLocations.map((item) => {
+                {paginatedLocations.map((item) => {
                   const isSelected = selectedIds.has(item.id);
 
                   return (
@@ -715,11 +743,94 @@ o también 4 columnas:
           </div>
         )}
 
-        {/* Footer info */}
-        <div className="p-3 bg-zinc-50 border-t border-zinc-200 flex items-center justify-between text-xs text-zinc-500 px-4">
-          <span>
-            Mostrando <strong>{filteredLocations.length}</strong> de <strong>{locations.length}</strong> ubicaciones
-          </span>
+        {/* Footer info con Paginación */}
+        <div className="p-3 bg-zinc-50 border-t border-zinc-200 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-zinc-600 px-4">
+          <div className="flex items-center gap-2">
+            <span>
+              Mostrando <strong>{filteredLocations.length === 0 ? 0 : (safePage - 1) * pageSize + 1} - {Math.min(safePage * pageSize, filteredLocations.length)}</strong> de <strong>{filteredLocations.length}</strong> ubicaciones
+            </span>
+            {filteredLocations.length !== locations.length && (
+              <span className="text-zinc-400">({locations.length} total)</span>
+            )}
+          </div>
+
+          {/* Selector de página */}
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={safePage === 1}
+                className="px-2 py-1 bg-white border border-zinc-200 rounded text-3xs font-semibold disabled:opacity-30 hover:bg-zinc-100 cursor-pointer"
+                title="Primera página"
+              >
+                «
+              </button>
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={safePage === 1}
+                className="px-2 py-1 bg-white border border-zinc-200 rounded text-3xs font-semibold disabled:opacity-30 hover:bg-zinc-100 cursor-pointer"
+                title="Página anterior"
+              >
+                ‹ Ant
+              </button>
+              <span className="px-2 py-0.5 bg-white border border-zinc-200 rounded text-3xs font-bold text-blue-700">
+                Pág {safePage} de {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={safePage === totalPages}
+                className="px-2 py-1 bg-white border border-zinc-200 rounded text-3xs font-semibold disabled:opacity-30 hover:bg-zinc-100 cursor-pointer"
+                title="Página siguiente"
+              >
+                Sig ›
+              </button>
+              <button
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={safePage === totalPages}
+                className="px-2 py-1 bg-white border border-zinc-200 rounded text-3xs font-semibold disabled:opacity-30 hover:bg-zinc-100 cursor-pointer"
+                title="Última página"
+              >
+                »
+              </button>
+            </div>
+          )}
+
+          {/* Opciones de tamaño de página */}
+          {filteredLocations.length > 50 && (
+            <div className="flex items-center gap-1 text-3xs">
+              <span className="text-zinc-500">Filas:</span>
+              {[50, 100, 250].map((size) => (
+                <button
+                  key={size}
+                  onClick={() => {
+                    setPageSize(size);
+                    setCurrentPage(1);
+                  }}
+                  className={`px-1.5 py-0.5 rounded cursor-pointer ${
+                    pageSize === size
+                      ? 'bg-blue-600 text-white font-bold'
+                      : 'bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-100'
+                  }`}
+                >
+                  {size}
+                </button>
+              ))}
+              <button
+                onClick={() => {
+                  setPageSize(filteredLocations.length);
+                  setCurrentPage(1);
+                }}
+                className={`px-1.5 py-0.5 rounded cursor-pointer ${
+                  pageSize >= filteredLocations.length
+                    ? 'bg-blue-600 text-white font-bold'
+                    : 'bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-100'
+                }`}
+              >
+                Todas
+              </button>
+            </div>
+          )}
+
           {locations.length > 0 && (
             <button
               onClick={onGoToCount}

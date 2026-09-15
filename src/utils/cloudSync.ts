@@ -11,7 +11,7 @@ export interface SyncMessage {
 }
 
 const ROOM_STORAGE_KEY = 'bodega_sync_room_id';
-const CLIENT_ID = `client_${Math.random().toString(36).substring(2, 9)}`;
+export const CLIENT_ID = `client_${Math.random().toString(36).substring(2, 9)}`;
 
 /**
  * Obtiene o crea un identificador único de sala para sincronizar este PC con el Celular
@@ -45,8 +45,10 @@ export function setCustomRoomId(newRoom: string): void {
 }
 
 /**
- * Servicio de sincronización en tiempo real sin backend (compatible con Vercel, Cloud Run y local)
- * Utiliza WebSocket público de baja latencia + BroadcastChannel para pestañas locales
+ * Servicio de sincronización en tiempo real de alta escalabilidad (1.000+ ubicaciones)
+ * - Soporta mensajes de cualquier tamaño mediante attachments automáticos con CORS abierto
+ * - Polling de historial (?poll=1) para que el celular reciba datos incluso si el PC se conectó antes
+ * - BroadcastChannel local para sincronización instantánea entre pestañas del mismo equipo
  */
 export class CloudSyncService {
   private roomId: string;
@@ -56,12 +58,15 @@ export class CloudSyncService {
   private messageListeners: ((msg: SyncMessage) => void)[] = [];
   private reconnectTimer: any = null;
   private isDestroyed = false;
+  private processedMessageIds = new Set<string>();
   public status: CloudSyncStatus = 'connecting';
 
   constructor(roomId?: string) {
     this.roomId = roomId || getOrCreateRoomId();
     this.initBroadcastChannel();
     this.connectWebSocket();
+    // Recuperar historial de sala inmediatamente al instanciar
+    this.fetchRoomHistory();
   }
 
   public getRoomId(): string {
@@ -70,7 +75,11 @@ export class CloudSyncService {
 
   public getShareableUrl(): string {
     if (typeof window === 'undefined') return '';
-    const url = new URL(window.location.href);
+    let origin = window.location.origin;
+    if (origin.includes('ais-dev-')) {
+      origin = origin.replace('ais-dev-', 'ais-pre-');
+    }
+    const url = new URL(origin + window.location.pathname);
     url.searchParams.set('room', this.roomId);
     return url.toString();
   }
@@ -90,19 +99,89 @@ export class CloudSyncService {
     }
   }
 
+  /**
+   * Resuelve el contenido de un mensaje de ntfy.sh, soportando payloads de más de 4KB (archivos adjuntos)
+   */
+  private async parseNtfyEvent(raw: any): Promise<SyncMessage | null> {
+    try {
+      if (raw.id && this.processedMessageIds.has(raw.id)) {
+        return null;
+      }
+      if (raw.id) {
+        this.processedMessageIds.add(raw.id);
+        // Limitar tamaño del set para evitar fuga de memoria
+        if (this.processedMessageIds.size > 1000) {
+          const first = this.processedMessageIds.values().next().value;
+          if (first) this.processedMessageIds.delete(first);
+        }
+      }
+
+      if (raw.event !== 'message') return null;
+
+      let jsonString = raw.message;
+
+      // Si el mensaje vino como adjunto (porque supera el límite de 4KB de texto en ntfy.sh)
+      if (raw.attachment && raw.attachment.url) {
+        try {
+          const fileRes = await fetch(raw.attachment.url);
+          if (fileRes.ok) {
+            jsonString = await fileRes.text();
+          }
+        } catch (err) {
+          console.error('Error al descargar adjunto de ntfy', err);
+          return null;
+        }
+      }
+
+      if (!jsonString || typeof jsonString !== 'string') return null;
+
+      const parsed: SyncMessage = JSON.parse(jsonString);
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Recupera el último estado de la sala desde el caché cloud de ntfy.sh (?poll=1)
+   * Esto permite que el celular obtenga las 1.000 ubicaciones al instante al abrir la sala
+   */
+  public async fetchRoomHistory(): Promise<void> {
+    try {
+      const res = await fetch(`https://ntfy.sh/${this.roomId}/json?poll=1`);
+      if (!res.ok) return;
+
+      const text = await res.text();
+      const lines = text.trim().split('\n').filter(Boolean);
+
+      // Procesar mensajes en orden cronológico
+      for (const line of lines) {
+        try {
+          const raw = JSON.parse(line);
+          const msg = await this.parseNtfyEvent(raw);
+          if (msg && msg.senderId !== CLIENT_ID) {
+            this.notifyMessage(msg);
+          }
+        } catch {
+          // ignore
+        }
+      }
+    } catch (e) {
+      console.warn('No se pudo consultar el historial inicial de la sala:', e);
+    }
+  }
+
   private connectWebSocket() {
     if (this.isDestroyed) return;
     this.updateStatus('connecting');
 
     try {
-      // Usar relay WebSocket seguro y de alta disponibilidad con CORS abierto
-      // ntfy.sh admite subscripción por WebSocket directamente en wss://ntfy.sh/<topic>/ws
       const wsUrl = `wss://ntfy.sh/${this.roomId}/ws`;
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
         this.updateStatus('connected');
-        // Solicitar estado a otros dispositivos que ya estén en la sala
+        // Solicitar sincronización a cualquier compañero conectado
         this.sendMessage({
           type: 'REQUEST_SYNC',
           senderId: CLIENT_ID,
@@ -111,15 +190,12 @@ export class CloudSyncService {
         });
       };
 
-      this.ws.onmessage = (event) => {
+      this.ws.onmessage = async (event) => {
         try {
           const raw = JSON.parse(event.data);
-          // En ntfy.sh el payload viene en raw.message cuando raw.event === 'message'
-          if (raw.event === 'message' && raw.message) {
-            const parsedMsg: SyncMessage = JSON.parse(raw.message);
-            if (parsedMsg && parsedMsg.senderId !== CLIENT_ID) {
-              this.notifyMessage(parsedMsg);
-            }
+          const msg = await this.parseNtfyEvent(raw);
+          if (msg && msg.senderId !== CLIENT_ID) {
+            this.notifyMessage(msg);
           }
         } catch {
           // Ignorar mensajes de keepalive o no JSON
@@ -169,37 +245,46 @@ export class CloudSyncService {
   }
 
   /**
-   * Envía un mensaje hacia todos los dispositivos de la misma sala (PC y Celular)
+   * Envía un mensaje hacia todos los dispositivos de la misma sala (PC y Celular).
+   * Si supera 3.5KB (ej. 246 o 1.000 ubicaciones), se envía con cabecera Filename
+   * para que ntfy.sh lo almacene como adjunto descargable con CORS abierto.
    */
-  public sendMessage(msg: SyncMessage) {
+  public async sendMessage(msg: SyncMessage): Promise<void> {
     const payloadStr = JSON.stringify(msg);
 
-    // 1. Enviar por BroadcastChannel local (otras pestañas)
+    // 1. Enviar por BroadcastChannel local (otras pestañas del navegador)
     try {
       this.broadcastChannel?.postMessage(msg);
     } catch {
       // ignore
     }
 
-    // 2. Enviar por HTTPS POST hacia el relay WebSocket (dispositivos remotos como el celular)
+    // 2. Enviar por HTTPS POST hacia ntfy.sh
     try {
-      fetch(`https://ntfy.sh/${this.roomId}`, {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      // Si supera 3KB, adjuntarlo como archivo para garantizar que nunca sea rechazado por tamaño
+      if (payloadStr.length > 3000) {
+        headers['Filename'] = 'bodega_sync.json';
+      }
+
+      await fetch(`https://ntfy.sh/${this.roomId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
+        headers,
         body: payloadStr,
         keepalive: true,
-      }).catch(() => {
-        // En caso de corte momentáneo de red
       });
-    } catch {
-      // ignore
+    } catch (err) {
+      console.warn('Error al transmitir mensaje de sincronización:', err);
     }
   }
 
   /**
-   * Celular marca una ubicación -> Notifica al PC al instante
+   * Celular o PC marca una ubicación -> Notifica al instante (payload muy ligero < 200 bytes)
    */
-  public broadcastStatusUpdate(id: string, status: LocationStatus) {
+  public broadcastStatusUpdate(id: string, code: string, status: LocationStatus) {
     this.sendMessage({
       type: 'UPDATE_STATUS',
       senderId: CLIENT_ID,
@@ -207,6 +292,7 @@ export class CloudSyncService {
       timestamp: Date.now(),
       payload: {
         id,
+        code,
         status,
         countedAt: status !== 'pendiente' ? new Date().toISOString() : undefined,
       },
@@ -214,7 +300,7 @@ export class CloudSyncService {
   }
 
   /**
-   * PC carga un nuevo listado -> Notifica al Celular al instante
+   * PC carga un nuevo listado (hasta miles de datos) -> Notifica a los celulares al instante
    */
   public broadcastReplaceAll(locations: LocationItem[]) {
     this.sendMessage({
@@ -252,5 +338,6 @@ export class CloudSyncService {
     }
     this.statusListeners = [];
     this.messageListeners = [];
+    this.processedMessageIds.clear();
   }
 }

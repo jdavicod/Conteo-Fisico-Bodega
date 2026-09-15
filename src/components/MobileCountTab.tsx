@@ -46,6 +46,10 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
   // Audio / feedback
   const [soundEnabled, setSoundEnabled] = useState(true);
 
+  // Pagination for high scalability (1.000+ items)
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(50);
+
   // Audio feedback helper
   const playSound = (status: LocationStatus) => {
     if (!soundEnabled) return;
@@ -153,7 +157,19 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
     return result;
   }, [locations, filterNivel, filterColumna, filterEstanteria, filterPosicion, filterStatus, searchQuery, sortField, sortDirection]);
 
+  // Total pages and sliced page items for instant rendering
+  const totalPages = Math.max(1, Math.ceil(filteredLocations.length / (pageSize > 0 ? pageSize : 1)));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedLocations = useMemo(() => {
+    if (pageSize <= 0 || pageSize >= filteredLocations.length) {
+      return filteredLocations;
+    }
+    const start = (safePage - 1) * pageSize;
+    return filteredLocations.slice(start, start + pageSize);
+  }, [filteredLocations, safePage, pageSize]);
+
   const handleSortToggle = (field: SortField) => {
+    setCurrentPage(1);
     if (sortField === field) {
       setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
@@ -176,6 +192,7 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
     setSearchQuery('');
     setSortField('code');
     setSortDirection('asc');
+    setCurrentPage(1);
   };
 
   const activeFiltersCount = useMemo(() => {
@@ -652,7 +669,7 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200">
-              {filteredLocations.map((item, idx) => {
+              {paginatedLocations.map((item, idx) => {
                 const isCounted = item.status !== 'pendiente';
 
                 return (
@@ -738,15 +755,93 @@ export function MobileCountTab({ locations, onUpdateStatus, onGoToResults, onGoT
             </tbody>
           </table>
 
-          {/* Pie de tabla */}
-          <div className="p-2 bg-zinc-50 border-t border-zinc-200 flex items-center justify-between text-3xs text-zinc-500 px-3">
-            <span>
-              Mostrando <strong>{filteredLocations.length}</strong> de <strong>{locations.length}</strong>
-            </span>
-            <span className="text-emerald-700 font-semibold flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              En vivo
-            </span>
+          {/* Pie de tabla con Controles de Paginación para Alta Escalabilidad (1.000+ items) */}
+          <div className="p-2.5 bg-zinc-50 border-t border-zinc-200 flex flex-col sm:flex-row items-center justify-between gap-2 text-2xs text-zinc-600 px-3">
+            <div className="flex items-center gap-2">
+              <span>
+                Mostrando <strong>{filteredLocations.length === 0 ? 0 : (safePage - 1) * pageSize + 1} - {Math.min(safePage * pageSize, filteredLocations.length)}</strong> de <strong>{filteredLocations.length}</strong>
+              </span>
+              {filteredLocations.length !== locations.length && (
+                <span className="text-zinc-400">({locations.length} en total)</span>
+              )}
+            </div>
+
+            {/* Selector de página */}
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setCurrentPage(1)}
+                  disabled={safePage === 1}
+                  className="px-2 py-1 bg-white border border-zinc-200 rounded text-3xs font-semibold disabled:opacity-30 hover:bg-zinc-100 cursor-pointer"
+                  title="Primera página"
+                >
+                  «
+                </button>
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={safePage === 1}
+                  className="px-2 py-1 bg-white border border-zinc-200 rounded text-3xs font-semibold disabled:opacity-30 hover:bg-zinc-100 cursor-pointer"
+                  title="Página anterior"
+                >
+                  ‹ Ant
+                </button>
+                <span className="px-2 py-0.5 bg-white border border-zinc-200 rounded text-3xs font-bold text-blue-700">
+                  {safePage} / {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={safePage === totalPages}
+                  className="px-2 py-1 bg-white border border-zinc-200 rounded text-3xs font-semibold disabled:opacity-30 hover:bg-zinc-100 cursor-pointer"
+                  title="Página siguiente"
+                >
+                  Sig ›
+                </button>
+                <button
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={safePage === totalPages}
+                  className="px-2 py-1 bg-white border border-zinc-200 rounded text-3xs font-semibold disabled:opacity-30 hover:bg-zinc-100 cursor-pointer"
+                  title="Última página"
+                >
+                  »
+                </button>
+              </div>
+            )}
+
+            {/* Opciones de tamaño de página */}
+            {filteredLocations.length > 50 && (
+              <div className="flex items-center gap-1 text-3xs">
+                <span className="text-zinc-500">Filas:</span>
+                {[50, 100, 250].map((size) => (
+                  <button
+                    key={size}
+                    onClick={() => {
+                      setPageSize(size);
+                      setCurrentPage(1);
+                    }}
+                    className={`px-1.5 py-0.5 rounded cursor-pointer ${
+                      pageSize === size
+                        ? 'bg-blue-600 text-white font-bold'
+                        : 'bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-100'
+                    }`}
+                  >
+                    {size}
+                  </button>
+                ))}
+                <button
+                  onClick={() => {
+                    setPageSize(filteredLocations.length);
+                    setCurrentPage(1);
+                  }}
+                  className={`px-1.5 py-0.5 rounded cursor-pointer ${
+                    pageSize >= filteredLocations.length
+                      ? 'bg-blue-600 text-white font-bold'
+                      : 'bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-100'
+                  }`}
+                >
+                  Todas
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

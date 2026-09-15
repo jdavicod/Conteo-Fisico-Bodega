@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { X, Smartphone, Copy, Check, Info, Radio, RefreshCw } from 'lucide-react';
+import { X, Smartphone, Copy, Check, Info, Radio, RefreshCw, Sparkles, Send } from 'lucide-react';
 import { LocationItem } from '../types';
-import { encodeLocationsToShareString } from '../utils/storage';
 
 interface Props {
   isOpen: boolean;
@@ -11,6 +10,7 @@ interface Props {
   roomId: string;
   onImportSharedString: (str: string) => boolean;
   onChangeRoomId?: (newRoom: string) => void;
+  onForceSync?: () => Promise<void> | void;
 }
 
 export function SyncQrModal({ 
@@ -18,31 +18,27 @@ export function SyncQrModal({
   onClose, 
   locations, 
   roomId, 
-  onImportSharedString,
-  onChangeRoomId 
+  onChangeRoomId,
+  onForceSync 
 }: Props) {
   const [copied, setCopied] = useState(false);
   const [customRoom, setCustomRoom] = useState(roomId);
   const [isEditingRoom, setIsEditingRoom] = useState(false);
+  const [isSyncingNow, setIsSyncingNow] = useState(false);
+  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   // Resolve base URL:
   // If running in development (ais-dev-...), replace with the public preview (ais-pre-...)
-  // If deployed to Vercel or custom domain, uses current origin directly.
   let origin = window.location.origin;
   if (origin.includes('ais-dev-')) {
     origin = origin.replace('ais-dev-', 'ais-pre-');
   }
 
-  const encodedData = encodeLocationsToShareString(locations);
-  
   // Create shareable URL containing ?room=<roomId>
   const url = new URL(origin + window.location.pathname);
   url.searchParams.set('room', roomId);
-  if (encodedData && encodedData.length > 0 && encodedData.length < 1500) {
-    url.hash = `data=${encodedData}`;
-  }
   const shareableUrl = url.toString();
 
   const handleCopy = () => {
@@ -52,11 +48,29 @@ export function SyncQrModal({
     });
   };
 
+  const handleManualSync = async () => {
+    setIsSyncingNow(true);
+    setSyncFeedback(null);
+    try {
+      if (onForceSync) {
+        await onForceSync();
+      }
+      setSyncFeedback(`¡Sincronizado! ${locations.length} ubicaciones transmitidas a la sala.`);
+      setTimeout(() => setSyncFeedback(null), 4000);
+    } catch {
+      setSyncFeedback('Error al sincronizar. Revisa tu conexión.');
+    } finally {
+      setIsSyncingNow(false);
+    }
+  };
+
   const handleSaveRoom = (e: React.FormEvent) => {
     e.preventDefault();
     if (customRoom.trim() && onChangeRoomId) {
       onChangeRoomId(customRoom.trim());
       setIsEditingRoom(false);
+      setSyncFeedback(`Cambiado a sala "${customRoom.trim()}".`);
+      setTimeout(() => setSyncFeedback(null), 3000);
     }
   };
 
@@ -65,7 +79,7 @@ export function SyncQrModal({
       <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-zinc-200 relative animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-1.5 text-zinc-400 hover:text-zinc-600 rounded-lg hover:bg-zinc-100"
+          className="absolute top-4 right-4 p-1.5 text-zinc-400 hover:text-zinc-600 rounded-lg hover:bg-zinc-100 cursor-pointer"
         >
           <X className="w-5 h-5" />
         </button>
@@ -86,7 +100,7 @@ export function SyncQrModal({
         </div>
 
         <p className="text-xs text-zinc-600 mb-3 leading-relaxed">
-          Escanea este código QR con la cámara de tu celular. Al abrirlo, cualquier conteo que realices en los pasillos se verá <strong>en tiempo real en la pantalla de este computador</strong> para descargar el Excel.
+          Escanea este código QR con la cámara de tu celular. Soporta desde <strong>1 hasta más de 1.000 ubicaciones</strong> en tiempo real sin límites de tamaño.
         </p>
 
         {/* QR container */}
@@ -94,7 +108,7 @@ export function SyncQrModal({
           <div className="p-3 bg-white rounded-lg shadow-2xs border border-zinc-200">
             <QRCodeSVG 
               value={shareableUrl}
-              size={175}
+              size={180}
               level="M"
               includeMargin={false}
             />
@@ -104,11 +118,33 @@ export function SyncQrModal({
             <p className="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-md border border-blue-100 mt-0.5">
               {roomId}
             </p>
+            <span className="text-3xs text-zinc-500 mt-1 block">
+              {locations.length > 0 
+                ? `${locations.length.toLocaleString()} ubicaciones listas para sincronizar` 
+                : 'Sin ubicaciones cargadas todavía'}
+            </span>
           </div>
         </div>
 
-        {/* Copy Link button & tips */}
-        <div className="space-y-3">
+        {/* Feedback alert */}
+        {syncFeedback && (
+          <div className="mb-3 p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium rounded-xl flex items-center gap-2">
+            <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{syncFeedback}</span>
+          </div>
+        )}
+
+        {/* Action buttons */}
+        <div className="space-y-2.5">
+          <button
+            onClick={handleManualSync}
+            disabled={isSyncingNow}
+            className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${isSyncingNow ? 'animate-spin' : ''}`} />
+            <span>{isSyncingNow ? 'Sincronizando con la nube...' : `Forzar Sincronización Ahora (${locations.length} ubicaciones)`}</span>
+          </button>
+
           <button
             onClick={handleCopy}
             className="w-full py-2.5 px-4 bg-zinc-900 hover:bg-zinc-800 text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer"
@@ -141,7 +177,7 @@ export function SyncQrModal({
                 <button
                   type="button"
                   onClick={() => setIsEditingRoom(false)}
-                  className="px-2 py-1.5 text-zinc-500 hover:text-zinc-700 text-xs"
+                  className="px-2 py-1.5 text-zinc-500 hover:text-zinc-700 text-xs cursor-pointer"
                 >
                   Cancelar
                 </button>
@@ -152,7 +188,7 @@ export function SyncQrModal({
               <button
                 type="button"
                 onClick={() => setIsEditingRoom(true)}
-                className="text-2xs text-zinc-500 hover:text-blue-600 font-medium underline"
+                className="text-2xs text-zinc-500 hover:text-blue-600 font-medium underline cursor-pointer"
               >
                 ¿Quieres usar tu propio código o nombre de sala?
               </button>
@@ -162,9 +198,9 @@ export function SyncQrModal({
           <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-100 flex items-start gap-2 text-2xs text-blue-900">
             <Info className="w-4 h-4 shrink-0 text-blue-600 mt-0.5" />
             <div>
-              <strong>100% en la nube sin instalar nada</strong>
+              <strong>Escalable a 1.000+ ubicaciones</strong>
               <p className="mt-0.5 text-blue-800">
-                Funciona directamente en la web (Vercel). No requiere permisos de administrador en el computador del trabajo.
+                Los datos grandes se transmiten con compresión de adjuntos de alta velocidad. Cualquier conteo hecho en el celular se actualiza en el PC instantáneamente.
               </p>
             </div>
           </div>

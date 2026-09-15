@@ -19,6 +19,7 @@ interface Props {
   onOpenSync: () => void;
   syncStatus?: CloudSyncStatus;
   roomId?: string;
+  onForceSync?: () => void;
 }
 
 export function Navbar({ 
@@ -27,7 +28,8 @@ export function Navbar({
   locations, 
   onOpenSync, 
   syncStatus = 'connected',
-  roomId = ''
+  roomId = '',
+  onForceSync
 }: Props) {
   const total = locations.length;
   const counted = locations.filter(l => l.status !== 'pendiente').length;
@@ -131,8 +133,19 @@ export function Navbar({
             </button>
           </nav>
 
-          {/* Quick QR link */}
+          {/* Quick sync & QR links */}
           <div className="flex items-center gap-2">
+            {onForceSync && (
+              <button
+                onClick={onForceSync}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-zinc-700 bg-white hover:bg-zinc-50 border border-zinc-200 rounded-lg transition-colors shadow-2xs cursor-pointer"
+                title="Actualizar / Forzar sincronización en la nube"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${syncStatus === 'connecting' ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">Sincronizar</span>
+              </button>
+            )}
+
             <button
               onClick={onOpenSync}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-zinc-700 bg-white hover:bg-zinc-50 border border-zinc-200 rounded-lg transition-colors shadow-2xs cursor-pointer"
